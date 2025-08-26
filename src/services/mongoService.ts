@@ -12,7 +12,7 @@ class MongoService {
                       ? window.location.origin 
                       : 'http://localhost:5000');
     
-    this.baseUrl = `${apiUrl}/api`;
+    this.baseUrl = `${apiUrl}`;
     
     if (import.meta.env.DEV) {
       console.log('🔧 MongoDB Service Configuration:');

@@ -1,16 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Crown } from 'lucide-react';
-import { useSubscription } from '../../../context/SubscriptionContext';
-import WorkspaceManager from '../workspace/WorkspaceManager';
+import React, { useState, useEffect } from "react";
+import { Users, Crown } from "lucide-react";
+import { useSubscription } from "../../../context/SubscriptionContext";
+import WorkspaceManager from "../workspace/WorkspaceManager";
+import { simpleWebSocketService } from "../../../services/simpleWebSocketService";
 
 const RealTimeCollaboration: React.FC = () => {
   const { canUseFeature, setShowUpgradeModal, setUpgradeReason } = useSubscription();
-  const [currentWorkspaceId] = useState('default-workspace');
+  const [currentWorkspaceId] = useState("default-workspace");
 
-  // Check if user can use collaboration
-  const canUseCollaboration = canUseFeature('canUseAdvancedSecurity');
+  const canUseCollaboration = canUseFeature("canUseAdvancedSecurity");
 
-  // Show upgrade prompt for non-Ultimate users
+  useEffect(() => {
+    if (canUseCollaboration) {
+      console.log("⚡ Connecting WebSocket...");
+      simpleWebSocketService.connect(currentWorkspaceId).catch(console.error);
+
+      return () => {
+        console.log("⚡ Disconnecting WebSocket on unmount");
+        simpleWebSocketService.disconnect();
+      };
+    }
+  }, [canUseCollaboration, currentWorkspaceId]);
+
   if (!canUseCollaboration) {
     return (
       <div className="h-full flex flex-col items-center justify-center p-6 text-center">
@@ -25,7 +36,9 @@ const RealTimeCollaboration: React.FC = () => {
         </p>
         <button
           onClick={() => {
-            setUpgradeReason('Real-time collaboration is available in Ultimate plan. Upgrade to work with your team in real-time.');
+            setUpgradeReason(
+              "Real-time collaboration is available in Ultimate plan. Upgrade to work with your team in real-time."
+            );
             setShowUpgradeModal(true);
           }}
           className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors duration-200"
