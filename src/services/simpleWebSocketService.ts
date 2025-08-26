@@ -35,8 +35,8 @@ class SimpleWebSocketService {
         path: "/ws/portfolio-updates",
         transports: ["websocket", "polling"],
         reconnection: true,
-        reconnectionAttempts: this.maxReconnectAttempts,
-        reconnectionDelay: this.reconnectDelay,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 2000,
         autoConnect: true,
       });
 
