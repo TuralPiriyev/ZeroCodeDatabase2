@@ -70,7 +70,7 @@ app.ws('/ws/collaboration/:schemaId', (ws, req) => {
     return;
   }
   
-  console.log(`✅ New WebSocket connection for schema: ${schemaId}`);
+  console.log(`✅ New WebSocket connection for schema: ${schemaId} from ${req.ip}`);
   
   // Add connection to schema group
   if (!connections.has(schemaId)) {

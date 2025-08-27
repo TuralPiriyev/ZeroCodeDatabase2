@@ -49,7 +49,7 @@ const getWebSocketUrl = (path: string) => {
   
   // Production zamanı eyni hostdan istifadə et
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.host;
+  const host = window.location.hostname; // .host əvəzinə .hostname istifadə et
   return `${protocol}//${host}${path}`;
 };
 

@@ -37,11 +37,8 @@ const SMTP_PORT = Number(process.env.SMTP_PORT);
 const app = express();
 const server = http.createServer(app);
 
-
-
 // Socket.IO setup with CORS
 const io = socketIo(server, {
-  path: '/ws/portfolio-updates',  // <- frontend ilə uyğun
   cors: {
     origin: [
       'https://startup-1-j563.onrender.com',
@@ -54,7 +51,6 @@ const io = socketIo(server, {
   },
   transports: ['websocket', 'polling']
 });
-
 
 // Make io available to routes
 app.set('io', io);
@@ -247,7 +243,7 @@ io.on('connection', (socket) => {
   socket.on('join_workspace', (workspaceId) => {
     console.log(`🏠 Socket ${socket.id} joining workspace: ${workspaceId}`);
     socket.join(`workspace_${workspaceId}`);
-    
+
     // Track socket in workspace
     if (!workspaceRooms.has(workspaceId)) {
       workspaceRooms.set(workspaceId, new Set());
@@ -260,7 +256,7 @@ io.on('connection', (socket) => {
   socket.on('leave_workspace', (workspaceId) => {
     console.log(`🚪 Socket ${socket.id} leaving workspace: ${workspaceId}`);
     socket.leave(`workspace_${workspaceId}`);
-    
+
     // Remove from tracking
     if (workspaceRooms.has(workspaceId)) {
       workspaceRooms.get(workspaceId).delete(socket.id);
@@ -289,22 +285,18 @@ const emitToWorkspace = (workspaceId, event, data) => {
 app.set('emitToWorkspace', emitToWorkspace);
 
 // SMTP configuration
-let transporter = null;
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: SMTP_PORT,
+  secure: SMTP_PORT === 465,
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+});
 
-if (process.env.SMTP_HOST && process.env.SMTP_PORT) {
-  transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_PORT === 465,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-  });
-
+if (process.env.SMTP_HOST) {
   transporter.verify((err) => {
     if (err) console.error('SMTP verify error:', err);
     else console.log('✅ SMTP ready');
   });
-} else {
-  console.log('📧 SMTP not configured');
 }
 
 // Contact form endpoint
@@ -313,11 +305,6 @@ app.post('/api/contact', async (req, res) => {
   if (!name || !email || !message) {
     return res.status(400).json({ error: 'All fields are required.' });
   }
-  
-  if (!transporter) {
-    return res.status(503).json({ error: 'Email service not configured' });
-  }
-  
   try {
     await transporter.sendMail({
       from: `"${name}" <${email}>`,
@@ -360,10 +347,7 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(distPath));
   
   // SPA fallback - ONLY for non-API routes
-  app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api')) {
-      return next();
-    }
+  app.get(/^\/(?!api).*/, (req, res) => {
     console.log(`📄 Serving SPA for: ${req.path}`);
     res.sendFile(path.join(distPath, "index.html"));
   });
@@ -374,7 +358,7 @@ app.use((err, req, res, next) => {
   console.error('❌ Unhandled error:', err);
   
   // Always return JSON for API routes
-  if (req.path && req.path.startsWith && req.path.startsWith('/api')) {
+  if (req.path.startsWith('/api')) {
     res.status(500).json({
       error: 'Internal Server Error',
       message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong',

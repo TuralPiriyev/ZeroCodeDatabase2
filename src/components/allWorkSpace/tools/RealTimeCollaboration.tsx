@@ -13,11 +13,12 @@ const RealTimeCollaboration: React.FC = () => {
   useEffect(() => {
     if (canUseCollaboration) {
       console.log("⚡ Connecting WebSocket...");
-      simpleWebSocketService.connect(currentWorkspaceId).catch(console.error);
+      // Type assertion-u unknown vasitəsilə edirik
+      (simpleWebSocketService.connect(currentWorkspaceId) as unknown as Promise<void>).catch(console.error);
 
       return () => {
         console.log("⚡ Disconnecting WebSocket on unmount");
-        simpleWebSocketService.disconnect();
+        simpleWebSocketService.disconnect(currentWorkspaceId);
       };
     }
   }, [canUseCollaboration, currentWorkspaceId]);

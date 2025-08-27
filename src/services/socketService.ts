@@ -15,7 +15,10 @@ class SocketService {
         return;
       }
 
-      const socketUrl = config.WS_BASE_URL;
+      // Live server üçün düzgün URL təyin et
+      const socketUrl = import.meta.env.DEV 
+        ? 'http://localhost:5000'
+        : window.location.origin;
       console.log('🔌 Connecting to Socket.IO:', socketUrl);
 
       this.socket = io(socketUrl, {
