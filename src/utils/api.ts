@@ -1,6 +1,10 @@
 // src/utils/api.ts
 import axios from 'axios';
-
+import config from '../config/environment';
+export const api = axios.create({
+  baseURL: config.API_BASE_URL,
+  withCredentials: true
+});
 // Load base URL from env or use current origin + /api
 const envUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '');
 const originUrl = typeof window !== 'undefined'

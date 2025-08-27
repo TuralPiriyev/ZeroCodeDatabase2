@@ -39,6 +39,7 @@ const server = http.createServer(app);
 
 // Socket.IO setup with CORS
 const io = socketIo(server, {
+  path: '/ws/portfolio-updates',   // <- MÜTLƏQ frontend WS_PATH-ə uyğun olsun
   cors: {
     origin: [
       'https://startup-1-j563.onrender.com',
@@ -51,6 +52,7 @@ const io = socketIo(server, {
   },
   transports: ['websocket', 'polling']
 });
+
 
 // Make io available to routes
 app.set('io', io);

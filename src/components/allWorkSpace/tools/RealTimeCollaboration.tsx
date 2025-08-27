@@ -1,3 +1,4 @@
+// src/components/allWorkSpace/tools/RealTimeCollaboration.tsx
 import React, { useState, useEffect } from "react";
 import { Users, Crown } from "lucide-react";
 import { useSubscription } from "../../../context/SubscriptionContext";
@@ -6,23 +7,32 @@ import { simpleWebSocketService } from "../../../services/simpleWebSocketService
 
 const RealTimeCollaboration: React.FC = () => {
   const { canUseFeature, setShowUpgradeModal, setUpgradeReason } = useSubscription();
-  const [currentWorkspaceId] = useState("default-workspace");
+  // include setter in case you need to change workspace later
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>("default-workspace");
 
   const canUseCollaboration = canUseFeature("canUseAdvancedSecurity");
 
   useEffect(() => {
-    if (canUseCollaboration) {
-      console.log("⚡ Connecting WebSocket...");
-      // Type assertion-u unknown vasitəsilə edirik
-      (simpleWebSocketService.connect(currentWorkspaceId) as unknown as Promise<void>).catch(console.error);
+    if (!currentWorkspaceId) return;
 
-      return () => {
-        console.log("⚡ Disconnecting WebSocket on unmount");
-        simpleWebSocketService.disconnect(currentWorkspaceId);
-      };
-    }
-  }, [canUseCollaboration, currentWorkspaceId]);
+    console.log('⚡ Connecting WebSocket...');
+    // connect returns a Promise, type the error to avoid implicit any
+    simpleWebSocketService.connect(currentWorkspaceId)
+      .then(() => {
+        console.log('WebSocket connected.');
+      })
+      .catch((err: unknown) => {
+        console.error('WebSocket connect failed:', err);
+      });
 
+    return () => {
+      console.log('⚡ Disconnecting WebSocket on unmount');
+      simpleWebSocketService.disconnect();
+    };
+    // re-run effect when workspace id changes
+  }, [currentWorkspaceId]);
+
+  // If user cannot use collaboration — show upgrade card
   if (!canUseCollaboration) {
     return (
       <div className="h-full flex flex-col items-center justify-center p-6 text-center">
