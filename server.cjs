@@ -39,19 +39,19 @@ const server = http.createServer(app);
 
 // Socket.IO setup with CORS
 const io = socketIo(server, {
-  path: '/ws/portfolio-updates',   // <- MÜTLƏQ frontend WS_PATH-ə uyğun olsun
+  path: '/ws/portfolio-updates',   // <- VƏ BU PATH frontend VITE_SOCKET_PATH ilə eyni olmalıdır
   cors: {
     origin: [
-      'https://startup-1-j563.onrender.com',
-      'http://localhost:5173',
-      'http://localhost:3000',
-      FRONTEND_ORIGIN
+      process.env.FRONTEND_ORIGIN,
+      'https://zerocodedb.online',
+      'http://localhost:5173'
     ],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET','POST'],
     credentials: true
   },
-  transports: ['websocket', 'polling']
+  transports: ['websocket','polling']
 });
+
 
 
 // Make io available to routes
