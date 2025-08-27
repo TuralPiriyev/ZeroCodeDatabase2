@@ -1,3 +1,6 @@
+// src/services/collaborationService.ts
+import { simpleWebSocketService } from './simpleWebSocketService';
+
 export interface CollaborationUser {
   id: string;
   username: string;
@@ -20,29 +23,19 @@ export interface SchemaChange {
   timestamp: Date;
 }
 
-import { simpleWebSocketService } from './simpleWebSocketService';
-
-// WebSocket URL helper
-const getWebSocketUrl = (schemaId: string) => {
-  if (import.meta.env.DEV) {
-    return `ws://localhost:5000/ws/collaboration/${schemaId}`;
-  }
-  
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.host;
-  return `${protocol}//${host}/ws/collaboration/${schemaId}`;
-};
-
 export default class CollaborationService {
-  private connectionId: string | null = null;
+  private connectionId: string | null = null; // we'll store schemaId here
   private currentUser: CollaborationUser | null = null;
   private schemaId: string | null = null;
   private eventHandlers: Map<string, Function[]> = new Map();
   public isConnected = false;
   private userJoinSent = false;
 
+  // keep references so we can off() them on disconnect
+  private _socketHandlers: Map<string, (...args: any[]) => void> = new Map();
+
   constructor() {
-    // All WebSocket operations delegated to SimpleWebSocketService
+    // All WebSocket operations delegated to simpleWebSocketService
   }
 
   initialize(user: CollaborationUser, schemaId: string) {
@@ -52,62 +45,124 @@ export default class CollaborationService {
     console.log('🔧 CollaborationService initialized:', { user: user.username, schemaId });
   }
 
-  connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (!this.currentUser || !this.schemaId) {
-        const error = new Error('Must initialize with user and schema ID before connecting');
-        console.error('❌ Connection failed:', error.message);
-        reject(error);
-        return;
-      }
+  async connect(): Promise<void> {
+    if (!this.currentUser || !this.schemaId) {
+      const error = new Error('Must initialize with user and schema ID before connecting');
+      console.error('❌ Connection failed:', error.message);
+      return Promise.reject(error);
+    }
 
-      if (this.isConnected && this.connectionId && simpleWebSocketService.isConnected(this.connectionId)) {
-        console.log('✅ WebSocket already connected');
-        resolve();
-        return;
-      }
+    // If already connected according to service, resolve
+    if (this.isConnected && simpleWebSocketService.isConnected()) {
+      console.log('✅ WebSocket already connected');
+      return Promise.resolve();
+    }
 
-      const url = getWebSocketUrl(this.schemaId);
-      console.log('🔗 Connecting to WebSocket via SimpleWebSocketService:', url);
-      
-      try {
-        this.connectionId = simpleWebSocketService.connect(url, {
-          onOpen: () => {
-            console.log('✅ Collaboration WebSocket connected successfully');
-            this.isConnected = true;
-            this.emit('connected');
-            resolve();
-          },
-          onMessage: (message) => {
-            this.handleMessage(message);
-          },
-          onClose: () => {
-            console.log('❌ Collaboration WebSocket disconnected');
-            this.isConnected = false;
-            this.userJoinSent = false;
-            this.emit('disconnected');
-          },
-          onError: (error) => {
-            console.error('❌ Collaboration WebSocket error:', error);
-            this.emit('error', error);
-            reject(error);
-          },
-          enableReconnect: true
-        });
+    try {
+      // Connect via shared service (service will join workspace if schemaId provided)
+      await simpleWebSocketService.connect(this.schemaId);
+      // mark connectionId as the schemaId for our bookkeeping
+      this.connectionId = this.schemaId;
+      // ensure we have joined the workspace on the service
+      simpleWebSocketService.joinWorkspace(this.schemaId);
+      this.isConnected = true;
+      console.log('✅ Collaboration WebSocket connected successfully (via simpleWebSocketService)');
 
-      } catch (error) {
-        console.error('❌ Failed to create WebSocket:', error);
-        reject(error);
-      }
+      // Register handlers for server-emitted events. Adapt mapping depending on server.
+      this.registerSocketHandlers();
+
+      // send user join (if not already)
+      this.sendUserJoin();
+
+      // notify local listeners
+      this.emit('connected');
+      return Promise.resolve();
+    } catch (err: any) {
+      console.error('❌ Collaboration WebSocket connect failed:', err);
+      this.isConnected = false;
+      this.emit('error', err);
+      return Promise.reject(err);
+    }
+  }
+
+  private registerSocketHandlers() {
+    // clear old handlers if any
+    this._socketHandlers.forEach((handler, evt) => {
+      simpleWebSocketService.off(evt, handler);
     });
+    this._socketHandlers.clear();
+
+    // Map of events we expect from simpleWebSocketService/socket.io server
+    const memberAdded = (data: any) => {
+      console.log('👋 Member added:', data);
+      // adapt to the collaborationService event names
+      this.emit('user_joined', data);
+    };
+    simpleWebSocketService.on('member_added', memberAdded);
+    this._socketHandlers.set('member_added', memberAdded);
+
+    const memberRemoved = (data: any) => {
+      console.log('👋 Member removed:', data);
+      this.emit('user_left', data);
+    };
+    simpleWebSocketService.on('member_removed', memberRemoved);
+    this._socketHandlers.set('member_removed', memberRemoved);
+
+    const memberUpdated = (data: any) => {
+      console.log('👤 Member updated:', data);
+      this.emit('member_updated', data);
+    };
+    simpleWebSocketService.on('member_updated', memberUpdated);
+    this._socketHandlers.set('member_updated', memberUpdated);
+
+    const dbUpdate = (data: any) => {
+      console.log('🔄 DB update:', data);
+      this.emit('db_update', data);
+    };
+    simpleWebSocketService.on('db_update', dbUpdate);
+    this._socketHandlers.set('db_update', dbUpdate);
+
+    // Fallback: listen to a generic "message" event if your service exposes it.
+    const generic = (message: any) => {
+      // If server sends structured messages like { type: 'cursor_update', data: {...} }
+      if (message && message.type) {
+        console.log('📨 Generic message received:', message.type);
+        // route to existing handler pipeline
+        this.handleMessage(message);
+      } else {
+        console.log('📨 Raw message received:', message);
+      }
+    };
+    simpleWebSocketService.on('message', generic);
+    this._socketHandlers.set('message', generic);
+
+    // Also listen for disconnect/error events emitted by the service itself (if it emits them)
+    const onDisconnect = (reason: any) => {
+      console.log('❌ Collaboration WebSocket disconnected:', reason);
+      this.isConnected = false;
+      this.userJoinSent = false;
+      this.emit('disconnected', reason);
+    };
+    simpleWebSocketService.on('disconnect', onDisconnect);
+    this._socketHandlers.set('disconnect', onDisconnect);
+
+    const onError = (err: any) => {
+      console.error('❌ Collaboration WebSocket error (service):', err);
+      this.emit('error', err);
+    };
+    simpleWebSocketService.on('error', onError);
+    this._socketHandlers.set('error', onError);
   }
 
   private sendUserJoin() {
     if (!this.currentUser || !this.schemaId || this.userJoinSent) return;
-    
+
     try {
-      this.sendMessage({
-        type: 'user_join',
+      // With socket.io server in this project, the canonical way to join workspace is joinWorkspace()
+      // and for other services we emit an event with user info. We'll emit 'user_join' event name
+      // but note: your server must be listening for this event for it to have effect.
+      // The shared service's send(event, data) calls socket.emit(event, data)
+      simpleWebSocketService.send('user_join', {
         userId: this.currentUser.id,
         username: this.currentUser.username,
         role: this.currentUser.role,
@@ -117,81 +172,79 @@ export default class CollaborationService {
       });
       this.userJoinSent = true;
       console.log('📤 User join message sent successfully');
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Failed to send user join message:', error);
     }
   }
 
   private handleMessage(message: any) {
-    console.log('📨 Received collaboration message:', message.type, message);
-    
-    switch (message.type) {
+    if (!message || typeof message !== 'object') return;
+    console.log('📨 Received collaboration message:', message.type ?? '(no type)', message);
+
+    const t = message.type;
+    switch (t) {
       case 'connection_established':
         console.log('🔗 Connection established with server, clientId:', message.clientId);
-        
-        // Send user join message after connection is established
-        setTimeout(() => {
-          if (this.isConnected && !this.userJoinSent) {
-            this.sendUserJoin();
-          }
-        }, 100);
+        if (!this.userJoinSent) {
+          setTimeout(() => {
+            if (this.isConnected && !this.userJoinSent) this.sendUserJoin();
+          }, 100);
+        }
         break;
-        
+
       case 'user_joined':
         console.log('👋 User joined:', message.user?.username);
         this.emit('user_joined', message.user);
         break;
-        
+
       case 'user_left':
         console.log('👋 User left:', message.userId);
         this.emit('user_left', message.userId);
         break;
-        
+
       case 'cursor_update':
-        // Server sends cursor data in 'data' field with validated structure
-        const cursorData = message.data;
-        
-        if (this.isValidCursorData(cursorData)) {
-          console.log('📍 Valid cursor update received:', cursorData);
-          this.emit('cursor_update', cursorData);
-        } else {
-          console.warn('⚠️ Invalid cursor_update message structure:', {
-            message,
-            hasData: !!message.data,
-            dataType: typeof message.data,
-            dataKeys: message.data ? Object.keys(message.data) : []
-          });
+        {
+          const cursorData = message.data ?? message.cursor ?? null;
+          if (this.isValidCursorData(cursorData)) {
+            console.log('📍 Valid cursor update received:', cursorData);
+            this.emit('cursor_update', cursorData);
+          } else {
+            console.warn('⚠️ Invalid cursor_update message structure:', {
+              message,
+              hasData: !!message.data,
+              dataType: typeof message.data,
+              dataKeys: message.data ? Object.keys(message.data) : []
+            });
+          }
         }
         break;
-        
+
       case 'schema_change':
-        console.log('🔄 Schema changed:', message.changeType);
+        console.log('🔄 Schema changed:', message.changeType ?? message.type);
         this.emit('schema_change', message);
         break;
-        
+
       case 'user_selection':
         this.emit('user_selection', message.data);
         break;
-        
+
       case 'presence_update':
         this.emit('presence_update', message.data);
         break;
-        
+
       case 'pong':
         console.log('💓 Heartbeat pong received');
         break;
-        
+
       default:
-        console.log('❓ Unknown message type:', message.type, message);
+        // if server uses socket.io events like 'member_added' forwarded as 'db_update' etc,
+        // they were already translated in registerSocketHandlers. Here we log unknown types.
+        console.log('❓ Unknown message type:', t, message);
     }
   }
 
   private isValidCursorData(data: any): boolean {
-    return data && 
-           typeof data === 'object' && 
-           data.userId && 
-           typeof data.userId === 'string' &&
-           data.userId.trim().length > 0;
+    return !!data && typeof data === 'object' && typeof data.userId === 'string' && data.userId.trim().length > 0;
   }
 
   sendCursorUpdate(position: CursorPosition) {
@@ -200,7 +253,8 @@ export default class CollaborationService {
       return;
     }
 
-    if (!this.isConnected || !this.connectionId || !simpleWebSocketService.isConnected(this.connectionId)) {
+    if (!this.isConnected || !simpleWebSocketService.isConnected()) {
+      console.warn('⚠️ Cannot send cursor update: not connected');
       return;
     }
 
@@ -216,76 +270,70 @@ export default class CollaborationService {
       }
     };
 
-    this.sendMessage(cursorMessage);
+    // send via generic event name (server should listen for this event)
+    simpleWebSocketService.send(cursorMessage.type, cursorMessage);
   }
 
   sendSchemaChange(change: SchemaChange) {
-    this.sendMessage({
-      type: 'schema_change',
+    if (!this.currentUser) return;
+    simpleWebSocketService.send('schema_change', {
       changeType: change.type,
       data: change.data,
-      userId: this.currentUser!.id,
-      username: this.currentUser!.username,
+      userId: this.currentUser.id,
+      username: this.currentUser.username,
       timestamp: new Date().toISOString()
     });
   }
 
   sendUserSelection(selection: { tableId?: string; columnId?: string }) {
-    this.sendMessage({
-      type: 'user_selection',
-      data: {
-        userId: this.currentUser!.id,
-        selection,
-        timestamp: new Date().toISOString()
-      }
+    if (!this.currentUser) return;
+    simpleWebSocketService.send('user_selection', {
+      userId: this.currentUser.id,
+      selection,
+      timestamp: new Date().toISOString()
     });
   }
 
   updatePresence(status: 'online' | 'away' | 'busy', currentAction?: string) {
-    this.sendMessage({
-      type: 'presence_update',
-      data: {
-        userId: this.currentUser!.id,
-        status,
-        currentAction,
-        timestamp: new Date().toISOString()
-      }
+    if (!this.currentUser) return;
+    simpleWebSocketService.send('presence_update', {
+      userId: this.currentUser.id,
+      status,
+      currentAction,
+      timestamp: new Date().toISOString()
     });
   }
 
   private sendMessage(message: any) {
-    if (!this.connectionId || !this.isConnected || !simpleWebSocketService.isConnected(this.connectionId)) {
+    if (!this.isConnected || !simpleWebSocketService.isConnected()) {
       console.warn('⚠️ WebSocket not connected, message not sent:', {
-        messageType: message.type,
+        messageType: message?.type,
         connectionId: this.connectionId,
         isConnected: this.isConnected,
-        serviceConnected: this.connectionId ? simpleWebSocketService.isConnected(this.connectionId) : false
+        serviceConnected: simpleWebSocketService.isConnected()
       });
       return;
     }
 
     try {
-      simpleWebSocketService.sendMessage(this.connectionId, message);
+      // use event name = message.type
+      simpleWebSocketService.send(message.type, message);
       console.log('📤 Message sent successfully:', message.type);
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Failed to send message:', error, message);
     }
   }
 
   on(event: string, handler: Function) {
-    if (!this.eventHandlers.has(event)) {
-      this.eventHandlers.set(event, []);
-    }
+    if (!this.eventHandlers.has(event)) this.eventHandlers.set(event, []);
     this.eventHandlers.get(event)!.push(handler);
   }
 
   off(event: string, handler: Function) {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
-      const index = handlers.indexOf(handler);
-      if (index > -1) {
-        handlers.splice(index, 1);
-      }
+      const i = handlers.indexOf(handler);
+      if (i > -1) handlers.splice(i, 1);
     }
   }
 
@@ -304,12 +352,10 @@ export default class CollaborationService {
 
   disconnect() {
     console.log('🔌 Disconnecting from Collaboration WebSocket');
-    
-    // Send leave message if connected
-    if (this.connectionId && this.currentUser && this.isConnected && this.userJoinSent) {
+
+    if (this.isConnected && this.userJoinSent && this.currentUser && this.schemaId) {
       try {
-        this.sendMessage({
-          type: 'user_leave',
+        simpleWebSocketService.send('user_leave', {
           userId: this.currentUser.id,
           schemaId: this.schemaId
         });
@@ -317,23 +363,38 @@ export default class CollaborationService {
         console.warn('⚠️ Failed to send user_leave message:', error);
       }
     }
-    
-    // Disconnect after a short delay
-    setTimeout(() => {
-      if (this.connectionId) {
-        simpleWebSocketService.disconnect(this.connectionId);
-        this.connectionId = null;
+
+    // Unregister handlers from service
+    this._socketHandlers.forEach((handler, evt) => {
+      simpleWebSocketService.off(evt, handler);
+    });
+    this._socketHandlers.clear();
+
+    // leave workspace if joined
+    if (this.schemaId) {
+      try {
+        simpleWebSocketService.leaveWorkspace();
+      } catch (e) {
+        // ignore
       }
-      this.isConnected = false;
-      this.userJoinSent = false;
-    }, 200);
+    }
+
+    // Disconnect underlying socket (if no other components use it)
+    try {
+      simpleWebSocketService.disconnect();
+    } catch (e) {
+      // ignore
+    }
+
+    this.connectionId = null;
+    this.isConnected = false;
+    this.userJoinSent = false;
+    this.emit('disconnected');
   }
 
   // Utility methods
   isConnectedState(): boolean {
-    return this.isConnected && 
-           this.connectionId !== null && 
-           simpleWebSocketService.isConnected(this.connectionId);
+    return this.isConnected && simpleWebSocketService.isConnected();
   }
 
   getConnectionState(): string {
@@ -365,7 +426,8 @@ export default class CollaborationService {
     };
   }
 
-  resolveConflict(localChange: any, remoteChange: any): any {
+  resolveConflict(_localChange: any, remoteChange: any): any {
+    // keep signature but prefix unused param to silence linter
     return remoteChange;
   }
 }
