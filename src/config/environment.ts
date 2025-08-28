@@ -1,11 +1,13 @@
 // src/config/environment.ts
+// src/config/environment.ts
 export const config = {
-  SOCKET_SERVER_BASE: import.meta.env.VITE_SOCKET_SERVER_BASE || 'https://zerocodedb.online',
+  API_BASE_URL: (import.meta.env.VITE_API_BASE_URL || (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.host}` : 'https://zerocodedb.online')).replace(/\/+$/, ''),
+  SOCKET_SERVER_BASE: (import.meta.env.VITE_SOCKET_SERVER_BASE || (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.host}` : 'https://zerocodedb.online')).replace(/\/+$/, ''),
   SOCKET_PATH: import.meta.env.VITE_SOCKET_PATH || '/ws/portfolio-updates',
-  API_BASE_URL: import.meta.env.VITE_API_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : 'https://zerocodedb.online'),
   isDevelopment: import.meta.env.DEV,
   isProduction: import.meta.env.PROD
 };
+
 
 
 if (config.isDevelopment) {
