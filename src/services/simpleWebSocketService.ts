@@ -21,35 +21,28 @@ class SimpleWebSocketService {
   }
 
   /**
-   * Connect can accept:
-   *  - undefined / workspaceId string (old behavior)
-   *  - a full URL like ws://host:port/ws/portfolio-updates or https://host (legacy callers)
-   *
-   * If a URL is passed, we will parse base & path from it and connect accordingly.
+   * Connect to the server.
+   * Accepts either a workspaceId or a URL; if URL is provided, base/path are parsed.
    */
   connect(workspaceIdOrUrl?: string): Promise<void> {
-    // If a URL was passed, detect and parse it
-    let base = config.SOCKET_SERVER_BASE.replace(/\/+$/, '');
+    // parse base & path from config defaults
+    let base = (config.SOCKET_SERVER_BASE || '').replace(/\/+$/, '');
     let path = config.SOCKET_PATH || '/ws/portfolio-updates';
     let providedWorkspaceId: string | undefined;
 
     if (workspaceIdOrUrl) {
-      // If looks like a URL (http(s):// or ws(s):// or contains /ws/)
       const looksLikeUrl = /^(wss?:\/\/|https?:\/\/)|\/ws\//i.test(workspaceIdOrUrl);
       if (looksLikeUrl) {
         try {
-          // Normalize ws:// -> http:// for parsing
           const normalized = workspaceIdOrUrl.replace(/^ws:/i, 'http:').replace(/^wss:/i, 'https:');
           const u = new URL(normalized, window.location.origin);
-          base = `${u.protocol}//${u.host}`; // e.g. https://api.example.com
-          // find /ws/... path portion if any
+          base = `${u.protocol}//${u.host}`;
           const wsIndex = u.pathname.indexOf('/ws/');
           if (wsIndex >= 0) {
             path = u.pathname.substring(wsIndex);
           } else {
             path = u.pathname || path;
           }
-          // Try to infer workspaceId (last path segment)
           const parts = u.pathname.split('/').filter(Boolean);
           if (parts.length > 0) {
             providedWorkspaceId = parts[parts.length - 1];
@@ -58,12 +51,11 @@ class SimpleWebSocketService {
           console.warn('simpleWebSocketService: failed to parse provided URL, falling back to defaults', e);
         }
       } else {
-        // Not a URL => treat as workspaceId
         providedWorkspaceId = workspaceIdOrUrl;
       }
     }
 
-    // If already connected to same base+path, just join workspace if given
+    // If already connected, optionally join workspace and resolve
     if (this.socket && this.socket.connected) {
       if (providedWorkspaceId) this.joinWorkspace(providedWorkspaceId);
       return Promise.resolve();
@@ -87,7 +79,6 @@ class SimpleWebSocketService {
         this.socket.on('connect', () => {
           console.log('✅ Socket.IO connected:', this.socket?.id);
           this.connectingPromise = null;
-          // auto-join workspace if provided
           if (providedWorkspaceId) {
             this.joinWorkspace(providedWorkspaceId);
           }
@@ -104,16 +95,15 @@ class SimpleWebSocketService {
 
         this.socket.on('disconnect', (reason: any) => {
           console.warn('❌ Socket.IO disconnected:', reason);
-          // emit local handlers
           this.emit('disconnect', reason);
         });
 
-        // forward server events to local handlers
+        // forward selected server events to our local handlers
         ['member_added', 'member_removed', 'member_updated', 'db_update', 'message'].forEach(evt => {
           this.socket?.on(evt, (data: any) => this.emit(evt, data));
         });
 
-        // general-purpose message handler (some servers send structured messages via default event)
+        // in case server uses 'message' - already included above, but keep for clarity
         this.socket?.on('message', (m: any) => this.emit('message', m));
       } catch (err) {
         this.connectingPromise = null;
@@ -126,12 +116,8 @@ class SimpleWebSocketService {
     return this.connectingPromise;
   }
 
-  /**
-   * Join workspace. Accepts either a workspaceId or a URL (extracts last path segment).
-   */
   joinWorkspace(workspaceIdOrUrl: string) {
     if (!workspaceIdOrUrl) return;
-    // If a URL was passed, try to extract last segment as id
     let workspaceId = workspaceIdOrUrl;
     if (/^(wss?:\/\/|https?:\/\/)|\/ws\//i.test(workspaceIdOrUrl)) {
       try {
@@ -140,7 +126,7 @@ class SimpleWebSocketService {
         const parts = u.pathname.split('/').filter(Boolean);
         if (parts.length > 0) workspaceId = parts[parts.length - 1];
       } catch (e) {
-        // fallback to provided string
+        // fallback
       }
     }
 
@@ -169,7 +155,8 @@ class SimpleWebSocketService {
     }
   }
 
-  disconnect() {
+  disconnect(_connectionId?: string) {
+    // ignore connectionId param; we manage a single socket instance
     if (this.socket) {
       this.leaveWorkspace();
       try { this.socket.close(); } catch {}
@@ -179,7 +166,11 @@ class SimpleWebSocketService {
     this.connectingPromise = null;
   }
 
-  isConnected(): boolean {
+  /**
+   * Backward-compatible isConnected.
+   * If a connectionId is passed, it's ignored (we only manage one underlying socket here).
+   */
+  isConnected(_connectionId?: string): boolean {
     return !!(this.socket && this.socket.connected);
   }
 
@@ -202,7 +193,11 @@ class SimpleWebSocketService {
   }
 
   /**
-   * send(event, data) - emits event with data on the socket
+   * send(eventName, data) - canonical emit
+   * sendMessage(...) - backward compatible: supports different call patterns:
+   * - sendMessage(messageObject) -> will emit messageObject.type (if present) or 'message'
+   * - sendMessage(eventName, data) -> will emit eventName with data
+   * - sendMessage(connectionId, messageObject) -> common older pattern; connectionId is ignored and messageObject is emitted
    */
   send(event: string, data?: any) {
     if (this.socket && this.socket.connected) {
@@ -210,6 +205,40 @@ class SimpleWebSocketService {
     } else {
       console.warn('Cannot send, socket not connected.');
     }
+  }
+
+  sendMessage(arg1: any, arg2?: any) {
+    if (!this.socket || !this.socket.connected) {
+      console.warn('Cannot sendMessage, socket not connected.');
+      return;
+    }
+
+    // Pattern 1: (connectionId, messageObject)
+    if (typeof arg1 === 'string' && arg2 && typeof arg2 === 'object') {
+      // older code passed connectionId as first param; we ignore it and send the message object
+      const message = arg2;
+      const eventName = message && message.type ? message.type : 'message';
+      this.socket.emit(eventName, message);
+      return;
+    }
+
+    // Pattern 2: (eventName, data) OR (eventName) 
+    if (typeof arg1 === 'string' && (arg2 === undefined || arg2 !== undefined)) {
+      const eventName = arg1;
+      const data = arg2;
+      this.socket.emit(eventName, data);
+      return;
+    }
+
+    // Pattern 3: (messageObject)
+    if (typeof arg1 === 'object' && arg1 !== null) {
+      const message = arg1;
+      const eventName = message && message.type ? message.type : 'message';
+      this.socket.emit(eventName, message);
+      return;
+    }
+
+    console.warn('sendMessage: unsupported arguments', arg1, arg2);
   }
 }
 
