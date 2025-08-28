@@ -18,7 +18,8 @@ interface WebSocketState {
 
 const getWebSocketUrl = (path: string) => {
   if (import.meta.env.DEV) {
-    return `ws://localhost:5000${path}`;
+    return `${window.location.origin.replace(/^http/, 'ws')}${path}`;
+
   }
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

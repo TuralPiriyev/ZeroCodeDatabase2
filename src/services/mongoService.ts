@@ -5,12 +5,9 @@ class MongoService {
   private baseUrl: string;
 
   constructor() {
-    const apiUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 
-                  (typeof window !== 'undefined' && window.location.hostname === 'localhost' 
-                    ? 'http://localhost:5000' 
-                    : typeof window !== 'undefined' 
-                      ? window.location.origin 
-                      : 'http://localhost:5000');
+  const apiUrl =
+      import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ||
+      (typeof window !== 'undefined' ? window.location.origin : '');
     
     this.baseUrl = `${apiUrl}`;
     
