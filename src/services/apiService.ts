@@ -4,7 +4,7 @@ class ApiService {
   private baseURL: string;
 
   constructor() {
-    this.baseURL = `${config.API_BASE_URL}/`;
+    this.baseURL = `${config.API_BASE_URL}`;
   }
 
   private getAuthHeaders(): Record<string, string> {
