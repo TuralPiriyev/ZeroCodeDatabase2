@@ -93,7 +93,7 @@ const PortfolioManager: React.FC = () => {
 
     // Initialize portfolio WebSocket connection
     const initPortfolioWebSocket = () => {
-      const wsUrl = 'ws://localhost:5000/ws/portfolio-updates';
+const wsUrl = `${window.location.origin.replace(/^http/, 'ws')}/ws/portfolio-updates`;
       
       try {
         const connectionId = simpleWebSocketService.connect(wsUrl, {
