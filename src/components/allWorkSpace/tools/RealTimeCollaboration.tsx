@@ -6,46 +6,39 @@ import WorkspaceManager from "../workspace/WorkspaceManager";
 import { simpleWebSocketService } from "../../../services/simpleWebSocketService";
 
 const RealTimeCollaboration: React.FC = () => {
-  const { canUseFeature } = useSubscription();
-  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null);
+  const { canUseFeature, setShowUpgradeModal, setUpgradeReason } = useSubscription();
+  const [currentWorkspaceId] = useState("default-workspace");
 
   const canUseCollaboration = canUseFeature("canUseAdvancedSecurity");
-const API_BASE = "https://zerocodedb.online/api";
-  useEffect(() => {
-    // Backend-ə workspace sorğusu
-    fetch(`${API_BASE}/workspaces/user-workspace`) // user-specific ad
-      .then(res => res.json())
-      .then(data => setCurrentWorkspaceId(data.name))
-      .catch(err => {
-        console.error('Workspace fetch failed:', err);
-        // errorsuz açmaq üçün fallback boş ID
-        setCurrentWorkspaceId(null);
-      });
-  }, []);
 
   useEffect(() => {
-    if (!currentWorkspaceId) return;
-
+    console.log('⚡ Connecting WebSocket...');
     simpleWebSocketService.connect(currentWorkspaceId)
-      .then(() => console.log('WebSocket connected.'))
-      .catch(err => console.error('WebSocket connect failed:', err));
+      .then(() => {
+        console.log('WebSocket connected.');
+      })
+      .catch((err: unknown) => {
+        console.error('WebSocket connect failed:', err);
+      });
 
-    return () => simpleWebSocketService.disconnect();
+    return () => {
+      console.log('⚡ Disconnecting WebSocket on unmount');
+      simpleWebSocketService.disconnect();
+    };
   }, [currentWorkspaceId]);
 
   if (!canUseCollaboration) {
     return (
+      // ... same UI as before
       <div className="h-full flex flex-col items-center justify-center p-6 text-center">
-        {/* Upgrade UI */}
+        {/* upgrade UI */}
       </div>
     );
   }
 
   return (
     <div className="h-full">
-      {currentWorkspaceId 
-        ? <WorkspaceManager workspaceId={currentWorkspaceId} /> 
-        : <div>Loading collaboration...</div> /* errorsuz fallback */}
+      <WorkspaceManager workspaceId={currentWorkspaceId} />
     </div>
   );
 };
