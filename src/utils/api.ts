@@ -10,7 +10,7 @@ const envUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '');
 const originUrl = typeof window !== 'undefined'
   ? window.location.origin.replace(/\/$/, '')
   : '';
-axios.defaults.baseURL = envUrl || `${originUrl}/api`;
+axios.defaults.baseURL = envUrl || `${originUrl}`;
 axios.defaults.withCredentials = true;
 
 // Log configuration in development
