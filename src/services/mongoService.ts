@@ -67,8 +67,7 @@ class MongoService {
           window.location.href = '/';
           return false;
         }
-        const errorData = await response.json().catch(() => ({}));
-        console.error(`Failed to save invitation: ${response.status}`, errorData);
+  console.error(`Failed to save invitation: ${response.status}`);
         return false;
       }
       return true;
@@ -86,8 +85,7 @@ class MongoService {
         body: JSON.stringify({ status }),
       });
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error(`Failed to update invitation status: ${response.status}`, errorData);
+  console.error(`Failed to update invitation status: ${response.status}`);
         return false;
       }
       return true;
@@ -131,8 +129,7 @@ class MongoService {
         }),
       });
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error(`Failed to save workspace member: ${response.status}`, errorData);
+  console.error(`Failed to save workspace member: ${response.status}`);
         return false;
       }
       return true;
@@ -174,8 +171,7 @@ class MongoService {
         }),
       });
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error(`Failed to update workspace: ${response.status}`, errorData);
+  console.error(`Failed to update workspace: ${response.status}`);
         return false;
       }
       return true;
@@ -192,10 +188,40 @@ class MongoService {
         headers: this.getAuthHeaders(),
       });
       if (!response.ok) {
+        if (response.status === 401) {
+          // Redirect to login when unauthorized
+          window.location.href = '/';
+          return [];
+        }
         console.error(`Failed to fetch user workspaces: ${response.status}`);
         return [];
       }
-      return await response.json();
+
+      const workspaces = await response.json();
+
+      // Convert workspaces.sharedSchemas into flat list of schema objects that match Portfolio shape
+      const schemas: any[] = [];
+      if (Array.isArray(workspaces)) {
+        workspaces.forEach((ws: any) => {
+          if (Array.isArray(ws.sharedSchemas)) {
+            ws.sharedSchemas.forEach((s: any) => {
+              // Only include schemas that have scripts (skip incomplete entries)
+              if (!s || (s.scripts === undefined || s.scripts === null)) return;
+              const scriptsValue = typeof s.scripts === 'string' ? s.scripts : JSON.stringify(s.scripts);
+              schemas.push({
+                _id: s.schemaId || `${ws.id}:${s.schemaId}`,
+                name: s.name || 'Shared Schema',
+                scripts: scriptsValue,
+                createdAt: s.lastModified || ws.updatedAt || new Date().toISOString(),
+                workspaceId: ws.id,
+                workspaceName: ws.name
+              });
+            });
+          }
+        });
+      }
+
+      return schemas;
     } catch (error) {
       console.error('Error fetching user workspaces:', error);
       return [];
@@ -210,7 +236,6 @@ class MongoService {
         body: JSON.stringify({ joinCode: joinCode.toUpperCase() }),
       });
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
         console.log('Join code validation failed, using fallback for development');
         // Return mock success for development mode
         return {
@@ -306,9 +331,8 @@ class MongoService {
           window.location.href = '/';
           return { exists: false, error: 'Authentication failed' };
         }
-        const errorData = await response.json().catch(() => ({}));
-        console.error(`Database check failed: ${response.status}`, errorData);
-        return { exists: false, error: errorData.message || 'Failed to check database' };
+            console.error(`Database check failed: ${response.status}`);
+            return { exists: false, error: 'Failed to check database' };
       }
       
       const data = await response.json();
@@ -340,9 +364,8 @@ class MongoService {
         if (response.status === 409) {
           return { success: false, error: 'Database already exists' };
         }
-        const errorData = await response.json().catch(() => ({}));
-        console.error(`Failed to save database: ${response.status}`, errorData);
-        return { success: false, error: errorData.message || 'Failed to save database' };
+            console.error(`Failed to save database: ${response.status}`);
+            return { success: false, error: 'Failed to save database' };
       }
       
       return { success: true };

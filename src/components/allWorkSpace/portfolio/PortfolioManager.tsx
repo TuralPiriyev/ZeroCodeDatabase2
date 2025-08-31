@@ -44,7 +44,7 @@ const PortfolioManager: React.FC = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importSQL, setImportSQL] = useState('');
   const [importError, setImportError] = useState('');
-  const [portfolioConnectionId, setPortfolioConnectionId] = useState<string | null>(null);
+  // single shared socket instance managed by simpleWebSocketService
   const [isConnected, setIsConnected] = useState(false);
   
   // Notification modal state
@@ -89,32 +89,29 @@ const PortfolioManager: React.FC = () => {
 
   useEffect(() => {
     loadPortfolios();
-    loadSharedSchemas();
+    if (localStorage.getItem('token')) {
+      loadSharedSchemas();
+    }
 
-    // Initialize portfolio WebSocket connection
+    // Initialize portfolio WebSocket connection using the shared service
     const initPortfolioWebSocket = () => {
-const wsUrl = `${window.location.origin.replace(/^http/, 'ws')}/ws/portfolio-updates`;
-      
+      const wsUrl = `${window.location.origin.replace(/^http/, 'ws')}/ws/portfolio-updates`;
       try {
-        const connectionId = simpleWebSocketService.connect(wsUrl, {
-          onOpen: () => {
+        simpleWebSocketService.connect(wsUrl)
+          .then(() => {
             console.log('✅ Portfolio WebSocket connected');
-            setIsConnected(true);
-          },
-          onClose: () => {
-            console.log('❌ Portfolio WebSocket disconnected');
-            setIsConnected(false);
-          },
-          onMessage: (message) => {
-            console.log('📨 Portfolio message:', message);
-            handlePortfolioUpdate(message);
-          },
-          onError: (error) => {
-            console.error('❌ Portfolio WebSocket error:', error);
-          },
-          enableReconnect: false
-        });
-        setPortfolioConnectionId(connectionId);
+            setIsConnected(simpleWebSocketService.isConnected());
+          })
+          .catch((err) => {
+            console.error('Failed to initialize portfolio WebSocket:', err);
+          });
+
+        // Register handlers
+        simpleWebSocketService.on('db_update', handlePortfolioUpdate);
+        simpleWebSocketService.on('member_added', handlePortfolioUpdate);
+        simpleWebSocketService.on('member_removed', handlePortfolioUpdate);
+        simpleWebSocketService.on('member_updated', handlePortfolioUpdate);
+        simpleWebSocketService.on('message', handlePortfolioUpdate);
       } catch (error) {
         console.error('Failed to initialize portfolio WebSocket:', error);
       }
@@ -125,15 +122,24 @@ const wsUrl = `${window.location.origin.replace(/^http/, 'ws')}/ws/portfolio-upd
 
     return () => {
       clearTimeout(timeoutId);
-      if (portfolioConnectionId) {
-        simpleWebSocketService.disconnect(portfolioConnectionId);
-      }
+      // disconnect shared socket
+      try { simpleWebSocketService.disconnect(); } catch (e) {}
+      // remove handlers
+      try {
+        simpleWebSocketService.off('db_update', handlePortfolioUpdate);
+        simpleWebSocketService.off('member_added', handlePortfolioUpdate);
+        simpleWebSocketService.off('member_removed', handlePortfolioUpdate);
+        simpleWebSocketService.off('member_updated', handlePortfolioUpdate);
+        simpleWebSocketService.off('message', handlePortfolioUpdate);
+      } catch (e) {}
     };
   }, [loadPortfolios]);
 
   const sendMessage = (message: any) => {
-    if (portfolioConnectionId) {
-      simpleWebSocketService.sendMessage(portfolioConnectionId, message);
+    try {
+      simpleWebSocketService.sendMessage(message);
+    } catch (e) {
+      console.warn('Failed to send portfolio message', e);
     }
   };
   

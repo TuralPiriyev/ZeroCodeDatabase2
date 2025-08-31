@@ -239,6 +239,62 @@ router.delete('/:workspaceId/members/:username', authenticate, async (req, res) 
   }
 });
 
+// POST /api/workspaces/:workspaceId/transfer-owner - Transfer ownership to another member
+router.post('/:workspaceId/transfer-owner', authenticate, async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    const { toUsername } = req.body;
+
+    if (!toUsername) return res.status(400).json({ error: 'toUsername is required' });
+
+    const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+
+    const requesterMember = await Member.findOne({ workspaceId, username: req.user.username || 'current_user' });
+    if (!requesterMember || requesterMember.role !== 'owner') return res.status(403).json({ error: 'Only workspace owners can transfer ownership' });
+
+    const newOwnerMember = await Member.findOne({ workspaceId, username: toUsername });
+    if (!newOwnerMember) return res.status(404).json({ error: 'Target member not found' });
+    if (newOwnerMember.role === 'owner') return res.status(400).json({ error: 'User is already the owner' });
+
+    // Update roles: demote current owner to editor, promote target to owner
+    // Attempt to set workspace.ownerId to the User._id of the new owner when possible
+    try {
+      const newOwnerUser = await User.findOne({ username: newOwnerMember.username });
+      if (newOwnerUser && newOwnerUser._id) {
+        workspace.ownerId = newOwnerUser._id;
+      } else {
+        // fallback to username if User._id not available
+        workspace.ownerId = newOwnerMember.username;
+      }
+    } catch (err) {
+      workspace.ownerId = newOwnerMember.username;
+    }
+    workspace.updatedAt = new Date();
+    await workspace.save();
+
+    // Update Member docs
+    await Member.updateOne({ workspaceId, username: requesterMember.username }, { $set: { role: 'editor', updatedAt: new Date() } });
+    newOwnerMember.role = 'owner';
+    newOwnerMember.updatedAt = new Date();
+    await newOwnerMember.save();
+
+    // Emit events
+    const emitToWorkspace = req.app.get('emitToWorkspace');
+    if (emitToWorkspace) {
+      emitToWorkspace(workspaceId, 'member_updated', { username: requesterMember.username, role: 'editor' });
+      emitToWorkspace(workspaceId, 'member_updated', { username: newOwnerMember.username, role: 'owner' });
+      emitToWorkspace(workspaceId, 'owner_changed', { newOwner: newOwnerMember.username });
+    }
+
+    const members = await Member.find({ workspaceId }).select('-_id username role joinedAt').lean();
+    res.json({ success: true, message: `Ownership transferred to ${newOwnerMember.username}`, members });
+  } catch (error) {
+    console.error('❌ Error transferring workspace ownership:', error);
+    res.status(500).json({ error: 'Failed to transfer ownership' });
+  }
+});
+
 // POST /api/workspaces/:workspaceId/schemas - Update shared schemas
 router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
   try {
@@ -255,10 +311,15 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
     const member = await Member.findOne({ workspaceId, username: req.user.username || 'current_user' });
-    if (!member || member.role === 'viewer') return res.status(403).json({ error: 'Insufficient permissions' });
+    if (!member) return res.status(403).json({ error: 'Insufficient permissions' });
 
+    // If updating an existing schema (replace), only owner can perform that operation.
     const existingSchemaIndex = workspace.sharedSchemas.findIndex(schema => schema.schemaId === schemaId);
-    const schemaData = { schemaId, name, scripts, lastModified: new Date() };
+    if (existingSchemaIndex >= 0 && member.role !== 'owner') {
+      return res.status(403).json({ error: 'Only workspace owners can replace an existing shared schema' });
+    }
+
+  const schemaData = { schemaId, name, scripts, lastModified: new Date() };
     if (existingSchemaIndex >= 0) {
       workspace.sharedSchemas[existingSchemaIndex] = schemaData;
       console.log('✅ Updated existing shared schema');
