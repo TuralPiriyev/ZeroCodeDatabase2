@@ -1,31 +1,44 @@
 // src/components/allWorkSpace/tools/RealTimeCollaboration.tsx
 import React, { useState, useEffect } from "react";
-import { Users, Crown } from "lucide-react";
 import { useSubscription } from "../../../context/SubscriptionContext";
 import WorkspaceManager from "../workspace/WorkspaceManager";
 import { simpleWebSocketService } from "../../../services/simpleWebSocketService";
 
 const RealTimeCollaboration: React.FC = () => {
-  const { canUseFeature, setShowUpgradeModal, setUpgradeReason } = useSubscription();
-  const [currentWorkspaceId] = useState("default-workspace");
+  const { canUseFeature } = useSubscription();
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null);
 
   const canUseCollaboration = canUseFeature("canUseAdvancedSecurity");
 
   useEffect(() => {
-    console.log('⚡ Connecting WebSocket...');
-    simpleWebSocketService.connect(currentWorkspaceId)
-      .then(() => {
-        console.log('WebSocket connected.');
-      })
-      .catch((err: unknown) => {
-        console.error('WebSocket connect failed:', err);
-      });
+    // Resolve initial workspace id: try to list workspaces and pick the first one
+    const resolveWorkspace = async () => {
+      try {
+        const res = await fetch(`${(import.meta.env.VITE_API_BASE_URL || window.location.origin).replace(/\/+$/, '')}/workspaces`, {
+          credentials: 'include'
+        });
+        if (res.ok) {
+          const list = await res.json();
+          if (Array.isArray(list) && list.length > 0) {
+            setCurrentWorkspaceId(list[0].id);
+            return;
+          }
+        }
+      } catch (e) {
+        // ignore, will fallback
+      }
+
+      // fallback to legacy id
+      setCurrentWorkspaceId('default-workspace');
+    };
+
+    resolveWorkspace();
 
     return () => {
       console.log('⚡ Disconnecting WebSocket on unmount');
       simpleWebSocketService.disconnect();
     };
-  }, [currentWorkspaceId]);
+  }, []);
 
   if (!canUseCollaboration) {
     return (
@@ -38,7 +51,7 @@ const RealTimeCollaboration: React.FC = () => {
 
   return (
     <div className="h-full">
-      <WorkspaceManager workspaceId={currentWorkspaceId} />
+  {currentWorkspaceId ? <WorkspaceManager workspaceId={currentWorkspaceId} /> : <div className="p-6">Resolving workspace...</div>}
     </div>
   );
 };
