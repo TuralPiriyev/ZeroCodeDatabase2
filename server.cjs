@@ -230,7 +230,7 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
-    const payload = { userId: user._id, email: user.email };
+  const payload = { userId: user._id, email: user.email, username: user.username };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '1d' });
     const uobj = user.toObject();
     delete uobj.password;
@@ -257,7 +257,7 @@ app.post('/api/auth/register', async (req, res) => {
     }
     const hashed = await bcrypt.hash(password, 10);
     const newUser = await new User({ username, email, password: hashed }).save();
-    const payload = { userId: newUser._id, email: newUser.email };
+  const payload = { userId: newUser._id, email: newUser.email, username: newUser.username };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '1d' });
     const uobj = newUser.toObject();
     delete uobj.password;

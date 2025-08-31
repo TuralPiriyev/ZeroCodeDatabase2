@@ -19,8 +19,10 @@ function authenticate(req, res, next) {
 
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    req.userId = payload.userId;
-    req.user   = { id: payload.userId, email: payload.email };
+  req.userId = payload.userId;
+  // prefer explicit username in token, fall back to email if available
+  const username = payload.username || payload.user || payload.email || null;
+  req.user   = { id: payload.userId, username, email: payload.email };
     next();
   } catch (err) {
     console.error('Auth error:', err);
