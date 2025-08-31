@@ -1,14 +1,11 @@
 // src/components/allWorkSpace/tools/RealTimeCollaboration.tsx
 import React, { useState, useEffect } from "react";
-import { useSubscription } from "../../../context/SubscriptionContext";
+// subscription gating removed to always show collaboration
 import WorkspaceManager from "../workspace/WorkspaceManager";
 import { simpleWebSocketService } from "../../../services/simpleWebSocketService";
 
 const RealTimeCollaboration: React.FC = () => {
-  const { canUseFeature } = useSubscription();
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null);
-
-  const canUseCollaboration = canUseFeature("canUseAdvancedSecurity");
 
   useEffect(() => {
     // Resolve initial workspace id: try to list workspaces and pick the first one
@@ -40,14 +37,7 @@ const RealTimeCollaboration: React.FC = () => {
     };
   }, []);
 
-  if (!canUseCollaboration) {
-    return (
-      // ... same UI as before
-      <div className="h-full flex flex-col items-center justify-center p-6 text-center">
-        {/* upgrade UI */}
-      </div>
-    );
-  }
+  // Always render collaboration UI (members and workspace manager).
 
   return (
     <div className="h-full">

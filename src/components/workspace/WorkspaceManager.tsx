@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Users, Share2, Loader } from 'lucide-react';
 import { useDatabase } from '../../context/DatabaseContext';
+import { useAuth } from '../../context/AuthContext';
 import { workspaceService, WorkspaceData } from '../../services/workspaceService';
 import InvitationForm from './InvitationForm';
 import TeamMembersList from './TeamMembersList.tsx';
@@ -11,6 +12,7 @@ interface WorkspaceManagerProps {
 
 const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
   const { currentSchema, importSchema } = useDatabase();
+  const { getCurrentUser } = useAuth();
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -236,6 +238,11 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
     );
   }
 
+  const currentUser = getCurrentUser();
+  const currentUserRole = workspace && currentUser
+    ? (workspace.members.find(m => m.username === currentUser.username)?.role || 'viewer')
+    : 'viewer';
+
   return (
     <div className="h-full flex flex-col p-6">
       {/* Header */}
@@ -255,13 +262,15 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
             </div>
           </div>
           
-          <button
-            onClick={shareCurrentSchema}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors duration-200"
-          >
-            <Share2 className="w-4 h-4" />
-            Share Current Schema
-          </button>
+          {currentUserRole === 'owner' && (
+            <button
+              onClick={shareCurrentSchema}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors duration-200"
+            >
+              <Share2 className="w-4 h-4" />
+              Share Current Schema
+            </button>
+          )}
         </div>
 
         {/* Connection Status */}
@@ -318,7 +327,7 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
             workspaceId={workspace.id}
             members={workspace.members}
             onMembersUpdate={handleMembersUpdate}
-            currentUserRole={workspace.members.find(m => m.username === 'current_user')?.role}
+            currentUserRole={currentUserRole}
           />
         )}
 

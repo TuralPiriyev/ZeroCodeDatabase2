@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Users, Share2, Loader, AlertCircle, Wifi, WifiOff } from 'lucide-react';
 import { useDatabase } from '../../../context/DatabaseContext';
+import { useAuth } from '../../../context/AuthContext';
 import { apiService } from '../../../services/apiService';
 import { socketService } from '../../../services/socketService';
 import InvitationForm from '../../workspace/InvitationForm';
@@ -33,6 +34,7 @@ interface WorkspaceManagerProps {
 
 const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
   const { currentSchema, importSchema } = useDatabase();
+  const { getCurrentUser } = useAuth();
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +79,7 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
       
       setWorkspace(data);
       
-      // Load first shared schema if available
+      // Load first shared schema if available (only if owner or editor)
       if (data.sharedSchemas && data.sharedSchemas.length > 0) {
         const firstSchema = data.sharedSchemas[0];
         if (firstSchema.scripts) {
@@ -209,6 +211,11 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
     );
   }
 
+  const currentUser = getCurrentUser();
+  const currentUserRole = workspace && currentUser
+    ? (workspace.members.find(m => m.username === currentUser.username)?.role || 'viewer')
+    : 'viewer';
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
@@ -229,13 +236,15 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
           </div>
           
           <div className="flex items-center gap-3">
-            <button
-              onClick={shareCurrentSchema}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors duration-200"
-            >
-              <Share2 className="w-4 h-4" />
-              Share Current Schema
-            </button>
+            {currentUserRole === 'owner' && (
+              <button
+                onClick={shareCurrentSchema}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors duration-200"
+              >
+                <Share2 className="w-4 h-4" />
+                Share Current Schema
+              </button>
+            )}
           </div>
         </div>
 
@@ -291,12 +300,12 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
       {/* Tab Content - Scrollable */}
       <div className="flex-1 overflow-y-auto p-6">
         {activeTab === 'members' && (
-          <TeamMembersList
-            workspaceId={workspace.id}
-            members={workspace.members}
-            onMembersUpdate={handleMembersUpdate}
-            currentUserRole={workspace.members.find(m => m.username === 'current_user')?.role}
-          />
+            <TeamMembersList
+              workspaceId={workspace.id}
+              members={workspace.members}
+              onMembersUpdate={handleMembersUpdate}
+              currentUserRole={currentUserRole}
+            />
         )}
 
         {activeTab === 'invite' && (
@@ -310,6 +319,7 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
           <SharedSchemas
             workspaceId={workspace.id}
             onSchemaLoad={handleSchemaLoad}
+            currentUserRole={currentUserRole}
           />
         )}
       </div>

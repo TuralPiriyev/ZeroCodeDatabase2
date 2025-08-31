@@ -87,8 +87,54 @@ app.use((req, res, next) => {
 // MongoDB connection
 if (MONGO_URL) {
   mongoose
-    .connect(MONGO_URL)
-    .then(() => console.log('✅ MongoDB connected'))
+      .connect(MONGO_URL)
+      .then(async () => {
+        console.log('✅ MongoDB connected');
+
+        // Migration: migrate embedded workspace.members -> Member collection
+        try {
+          console.log('🔁 Checking for embedded workspace.members to migrate...');
+          const workspacesWithMembers = await Workspace.find({ 'members.0': { $exists: true } }).lean();
+          if (workspacesWithMembers && workspacesWithMembers.length > 0) {
+            console.log(`🔁 Found ${workspacesWithMembers.length} workspace(s) with embedded members. Migrating...`);
+            let migratedCount = 0;
+            for (const ws of workspacesWithMembers) {
+              const wid = ws.id || ws._id;
+              const members = Array.isArray(ws.members) ? ws.members : [];
+              for (const m of members) {
+                const uname = m.username;
+                if (!uname) continue;
+                // avoid duplicates
+                const exists = await Member.findOne({ workspaceId: wid, username: new RegExp('^' + uname + '$', 'i') }).lean();
+                if (!exists) {
+                  const mem = new Member({
+                    workspaceId: wid,
+                    id: require('uuid').v4(),
+                    username: uname,
+                    role: m.role || 'viewer',
+                    joinedAt: m.joinedAt ? new Date(m.joinedAt) : new Date(),
+                    updatedAt: new Date()
+                  });
+                  await mem.save();
+                  migratedCount++;
+                }
+              }
+
+              // remove embedded members array to avoid duplication
+              try {
+                await Workspace.updateOne({ id: wid }, { $unset: { members: '' } });
+              } catch (e) {
+                console.warn('⚠️ Failed to unset members for workspace', wid, e.message || e);
+              }
+            }
+            console.log(`✅ Migration complete. Created ${migratedCount} Member records.`);
+          } else {
+            console.log('🔁 No embedded members found, migration not required.');
+          }
+        } catch (migErr) {
+          console.error('❌ Migration error:', migErr);
+        }
+      })
     .catch(err => {
       console.warn('⚠️ MongoDB connection failed:', err.message);
       console.log('📡 Continuing without MongoDB (development mode)');
