@@ -10,26 +10,14 @@ router.post('/', async (req, res) => {
   console.log('POST /api/portfolios body:', req.body);
   console.log('Authenticated user:', req.user.id);
   try {
-    // Check if portfolio with same name already exists for this user
-    const existingPortfolio = await Portfolio.findOne({ 
-      user: req.user.id, 
-      name: req.body.name 
-    });
-    
-    if (existingPortfolio) {
-      console.log('❌ Portfolio with this name already exists:', req.body.name);
-      return res.status(400).json({ 
-        message: 'A portfolio with this name already exists' 
-      });
-    }
-    
-    const p = await Portfolio.create({
-      user: req.user.id,
-      name: req.body.name,
-      scripts: req.body.scripts
-    });
-    console.log('✅ Portfolio saved:', p._id);
-    res.status(201).json(p);
+    // Upsert: if portfolio exists for this user+name, update scripts; otherwise create new
+    const filter = { user: req.user.id, name: req.body.name };
+    const update = { scripts: req.body.scripts, updatedAt: new Date() };
+    const options = { new: true, upsert: true, setDefaultsOnInsert: true };
+
+    const p = await Portfolio.findOneAndUpdate(filter, update, options);
+    console.log('✅ Portfolio upserted:', p._id);
+    res.status(200).json(p);
   } catch (err) {
     console.error('❌ Portfolio save error:', err);
     res.status(500).json({ message: 'Portfolio save error' });

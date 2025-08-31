@@ -51,7 +51,15 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
         { name, scripts },
         { headers }
       );
-      setPortfolios(prev => [res.data, ...prev]);
+      setPortfolios(prev => {
+        const existingIndex = prev.findIndex(p => p._id === res.data._id);
+        if (existingIndex >= 0) {
+          const next = [...prev];
+          next[existingIndex] = res.data;
+          return next;
+        }
+        return [res.data, ...prev];
+      });
     } catch (err: any) {
       console.error('Portfolio saxlama xətası:', err);
       if (err.response?.data?.message) {
