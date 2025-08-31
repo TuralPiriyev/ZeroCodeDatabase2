@@ -1,6 +1,7 @@
 const express = require('express');
 const Workspace = require('../models/Workspace.cjs');
 const User = require('../models/User.cjs');
+const Member = require('../models/Member.cjs');
 const { authenticate } = require('../middleware/auth.cjs');
 
 const router = express.Router();
@@ -9,14 +10,16 @@ const router = express.Router();
 router.get('/', authenticate, async (req, res) => {
   try {
     console.log('📂 Fetching workspaces for user:', req.userId);
-    
-    const workspaces = await Workspace.find({
-      $or: [
-        { ownerId: req.userId },
-        { 'members.username': req.user.username || 'current_user' }
-      ],
-      isActive: true
-    }).sort({ updatedAt: -1 });
+  // Find workspaces where user is owner OR has a member record
+  const ownerWorkspaces = await Workspace.find({ ownerId: req.userId, isActive: true }).sort({ updatedAt: -1 });
+  const memberRecords = await Member.find({ username: req.user.username || 'current_user' }).distinct('workspaceId');
+  const memberWorkspaces = await Workspace.find({ id: { $in: memberRecords }, isActive: true }).sort({ updatedAt: -1 });
+
+  // Merge unique workspaces (owner first)
+  const workspacesMap = new Map();
+  ownerWorkspaces.forEach(w => workspacesMap.set(w.id, w));
+  memberWorkspaces.forEach(w => { if (!workspacesMap.has(w.id)) workspacesMap.set(w.id, w); });
+  const workspaces = Array.from(workspacesMap.values());
 
     console.log('✅ Found workspaces:', workspaces.length);
     res.json(workspaces);
@@ -32,28 +35,25 @@ router.get('/:workspaceId', authenticate, async (req, res) => {
     const { workspaceId } = req.params;
     console.log('📂 Fetching workspace:', workspaceId);
     
-    const workspace = await Workspace.findOne({ 
-      id: workspaceId,
-      isActive: true 
-    });
-    
+    const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
     if (!workspace) {
       console.log('❌ Workspace not found:', workspaceId);
       return res.status(404).json({ error: 'Workspace not found' });
     }
 
-    // Check if user is a member
-    const isMember = workspace.members.some(member => 
-      member.username === (req.user.username || 'current_user')
-    );
-
-    if (!isMember && workspace.ownerId !== req.userId) {
+    // Check membership via Member collection
+    const memberRecord = await Member.findOne({ workspaceId, username: req.user.username || 'current_user' });
+    if (!memberRecord && workspace.ownerId !== req.userId) {
       console.log('❌ Access denied for workspace:', workspaceId);
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    // Assemble members list from Member collection
+    const members = await Member.find({ workspaceId }).select('-_id username role joinedAt').lean();
+    const out = workspace.toObject();
+    out.members = members || [];
     console.log('✅ Workspace found and accessible:', workspace.name);
-    res.json(workspace);
+    res.json(out);
   } catch (error) {
     console.error('❌ Error fetching workspace:', error);
     res.status(500).json({ error: 'Failed to fetch workspace' });
@@ -65,27 +65,15 @@ router.get('/:workspaceId/members', authenticate, async (req, res) => {
   try {
     const { workspaceId } = req.params;
     console.log('👥 Fetching members for workspace:', workspaceId);
-    
-    const workspace = await Workspace.findOne({ 
-      id: workspaceId,
-      isActive: true 
-    });
-    
-    if (!workspace) {
-      return res.status(404).json({ error: 'Workspace not found' });
-    }
+  const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
+  if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
-    // Check if user is a member
-    const isMember = workspace.members.some(member => 
-      member.username === (req.user.username || 'current_user')
-    );
+  const memberRecord = await Member.findOne({ workspaceId, username: req.user.username || 'current_user' });
+  if (!memberRecord && workspace.ownerId !== req.userId) return res.status(403).json({ error: 'Access denied' });
 
-    if (!isMember && workspace.ownerId !== req.userId) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    console.log('✅ Members found:', workspace.members.length);
-    res.json({ members: workspace.members });
+  const members = await Member.find({ workspaceId }).select('-_id username role joinedAt').lean();
+  console.log('✅ Members found:', members.length);
+  res.json({ members });
   } catch (error) {
     console.error('❌ Error fetching workspace members:', error);
     res.status(500).json({ error: 'Failed to fetch workspace members' });
@@ -109,20 +97,11 @@ router.post('/:workspaceId/invite', authenticate, async (req, res) => {
     }
 
     // Find workspace
-    const workspace = await Workspace.findOne({ 
-      id: workspaceId,
-      isActive: true 
-    });
-    
-    if (!workspace) {
-      return res.status(404).json({ error: 'Workspace not found' });
-    }
+    const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
-    // Check if requester is owner or editor
-    const requesterMember = workspace.members.find(member => 
-      member.username === (req.user.username || 'current_user')
-    );
-
+    // Check if requester is owner or editor via Member collection
+    const requesterMember = await Member.findOne({ workspaceId, username: req.user.username || 'current_user' });
     if (!requesterMember || (requesterMember.role !== 'owner' && requesterMember.role !== 'editor')) {
       return res.status(403).json({ error: 'Only owners and editors can invite users' });
     }
@@ -148,26 +127,20 @@ router.post('/:workspaceId/invite', authenticate, async (req, res) => {
     }
 
     // Check if user is already a member
-    const existingMember = workspace.members.find(member => 
-      member.username.toLowerCase() === username.toLowerCase()
-    );
+    const existingMember = await Member.findOne({ workspaceId, username: new RegExp('^' + username + '$', 'i') });
+    if (existingMember) return res.status(409).json({ error: 'User is already a member of this workspace' });
 
-    if (existingMember) {
-      return res.status(409).json({ error: 'User is already a member of this workspace' });
-    }
-
-    // Add member to workspace
-    const newMember = {
+    // Add member record
+    const newMember = new Member({
+      workspaceId,
+      id: require('uuid').v4(),
       username,
       role,
-      joinedAt: new Date()
-    };
-
-    workspace.members.push(newMember);
-    workspace.updatedAt = new Date();
-    await workspace.save();
-
-    console.log('✅ User successfully added to workspace:', newMember);
+      joinedAt: new Date(),
+      updatedAt: new Date()
+    });
+    await newMember.save();
+    console.log('✅ User successfully added to workspace:', newMember.username);
 
     // Emit real-time event to workspace members
     const io = req.app.get('io');
@@ -181,10 +154,11 @@ router.post('/:workspaceId/invite', authenticate, async (req, res) => {
     }
 
     // Return updated members array
+    const members = await Member.find({ workspaceId }).select('-_id username role joinedAt').lean();
     res.json({
       success: true,
       message: `${username} has been invited to the workspace`,
-      members: workspace.members
+      members
     });
 
   } catch (error) {
@@ -205,58 +179,26 @@ router.put('/:workspaceId/members/:username', authenticate, async (req, res) => 
       return res.status(400).json({ error: 'Valid role is required' });
     }
 
-    const workspace = await Workspace.findOne({ 
-      id: workspaceId,
-      isActive: true 
-    });
-    
-    if (!workspace) {
-      return res.status(404).json({ error: 'Workspace not found' });
-    }
+  const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
+  if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
-    // Check if requester is owner
-    const requesterMember = workspace.members.find(member => 
-      member.username === (req.user.username || 'current_user')
-    );
+  const requesterMember = await Member.findOne({ workspaceId, username: req.user.username || 'current_user' });
+  if (!requesterMember || requesterMember.role !== 'owner') return res.status(403).json({ error: 'Only workspace owners can update member roles' });
 
-    if (!requesterMember || requesterMember.role !== 'owner') {
-      return res.status(403).json({ error: 'Only workspace owners can update member roles' });
-    }
+  const memberToUpdate = await Member.findOne({ workspaceId, username });
+  if (!memberToUpdate) return res.status(404).json({ error: 'Member not found' });
+  if (memberToUpdate.role === 'owner') return res.status(400).json({ error: 'Cannot change owner role' });
 
-    // Find and update member
-    const memberToUpdate = workspace.members.find(member => 
-      member.username === username
-    );
+  memberToUpdate.role = role;
+  memberToUpdate.updatedAt = new Date();
+  await memberToUpdate.save();
 
-    if (!memberToUpdate) {
-      return res.status(404).json({ error: 'Member not found' });
-    }
+  console.log('✅ Member role updated successfully');
+  const emitToWorkspace = req.app.get('emitToWorkspace');
+  if (emitToWorkspace) emitToWorkspace(workspaceId, 'member_updated', { username: memberToUpdate.username, role: memberToUpdate.role });
 
-    if (memberToUpdate.role === 'owner') {
-      return res.status(400).json({ error: 'Cannot change owner role' });
-    }
-
-    // Update role
-    memberToUpdate.role = role;
-    workspace.updatedAt = new Date();
-    await workspace.save();
-
-    console.log('✅ Member role updated successfully');
-
-    // Emit real-time event
-    const emitToWorkspace = req.app.get('emitToWorkspace');
-    if (emitToWorkspace) {
-      emitToWorkspace(workspaceId, 'member_updated', {
-        username: memberToUpdate.username,
-        role: memberToUpdate.role
-      });
-    }
-
-    res.json({
-      success: true,
-      message: `${username} role updated to ${role}`,
-      members: workspace.members
-    });
+  const members = await Member.find({ workspaceId }).select('-_id username role joinedAt').lean();
+  res.json({ success: true, message: `${username} role updated to ${role}`, members });
 
   } catch (error) {
     console.error('❌ Error updating member role:', error);
@@ -271,59 +213,25 @@ router.delete('/:workspaceId/members/:username', authenticate, async (req, res) 
 
     console.log('🗑️ Removing member:', { workspaceId, username });
 
-    const workspace = await Workspace.findOne({ 
-      id: workspaceId,
-      isActive: true 
-    });
-    
-    if (!workspace) {
-      return res.status(404).json({ error: 'Workspace not found' });
-    }
+  const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
+  if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
-    // Check if requester is owner
-    const requesterMember = workspace.members.find(member => 
-      member.username === (req.user.username || 'current_user')
-    );
+  // Check if requester is owner via Member collection
+  const requesterMember = await Member.findOne({ workspaceId, username: req.user.username || 'current_user' });
+  if (!requesterMember || requesterMember.role !== 'owner') return res.status(403).json({ error: 'Only workspace owners can remove members' });
 
-    if (!requesterMember || requesterMember.role !== 'owner') {
-      return res.status(403).json({ error: 'Only workspace owners can remove members' });
-    }
+  const memberToRemove = await Member.findOne({ workspaceId, username });
+  if (!memberToRemove) return res.status(404).json({ error: 'Member not found' });
+  if (memberToRemove.role === 'owner') return res.status(400).json({ error: 'Cannot remove workspace owner' });
 
-    // Find member to remove
-    const memberToRemove = workspace.members.find(member => 
-      member.username === username
-    );
+  await Member.deleteOne({ workspaceId, username });
 
-    if (!memberToRemove) {
-      return res.status(404).json({ error: 'Member not found' });
-    }
+  console.log('✅ Member removed successfully');
+  const emitToWorkspace = req.app.get('emitToWorkspace');
+  if (emitToWorkspace) emitToWorkspace(workspaceId, 'member_removed', { username });
 
-    if (memberToRemove.role === 'owner') {
-      return res.status(400).json({ error: 'Cannot remove workspace owner' });
-    }
-
-    // Remove member
-    workspace.members = workspace.members.filter(member => 
-      member.username !== username
-    );
-    workspace.updatedAt = new Date();
-    await workspace.save();
-
-    console.log('✅ Member removed successfully');
-
-    // Emit real-time event
-    const emitToWorkspace = req.app.get('emitToWorkspace');
-    if (emitToWorkspace) {
-      emitToWorkspace(workspaceId, 'member_removed', {
-        username: username
-      });
-    }
-
-    res.json({
-      success: true,
-      message: `${username} has been removed from the workspace`,
-      members: workspace.members
-    });
+  const members = await Member.find({ workspaceId }).select('-_id username role joinedAt').lean();
+  res.json({ success: true, message: `${username} has been removed from the workspace`, members });
 
   } catch (error) {
     console.error('❌ Error removing member from workspace:', error);
@@ -343,36 +251,14 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Schema ID, name, and scripts are required' });
     }
 
-    const workspace = await Workspace.findOne({ 
-      id: workspaceId,
-      isActive: true 
-    });
-    
-    if (!workspace) {
-      return res.status(404).json({ error: 'Workspace not found' });
-    }
+    const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
-    // Check if user is a member with edit permissions
-    const member = workspace.members.find(member => 
-      member.username === (req.user.username || 'current_user')
-    );
+    const member = await Member.findOne({ workspaceId, username: req.user.username || 'current_user' });
+    if (!member || member.role === 'viewer') return res.status(403).json({ error: 'Insufficient permissions' });
 
-    if (!member || member.role === 'viewer') {
-      return res.status(403).json({ error: 'Insufficient permissions' });
-    }
-
-    // Update or add shared schema
-    const existingSchemaIndex = workspace.sharedSchemas.findIndex(schema => 
-      schema.schemaId === schemaId
-    );
-
-    const schemaData = {
-      schemaId,
-      name,
-      scripts,
-      lastModified: new Date()
-    };
-
+    const existingSchemaIndex = workspace.sharedSchemas.findIndex(schema => schema.schemaId === schemaId);
+    const schemaData = { schemaId, name, scripts, lastModified: new Date() };
     if (existingSchemaIndex >= 0) {
       workspace.sharedSchemas[existingSchemaIndex] = schemaData;
       console.log('✅ Updated existing shared schema');
@@ -380,26 +266,13 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
       workspace.sharedSchemas.push(schemaData);
       console.log('✅ Added new shared schema');
     }
-
     workspace.updatedAt = new Date();
     await workspace.save();
 
-    // Emit real-time event to workspace members
     const emitToWorkspace = req.app.get('emitToWorkspace');
-    if (emitToWorkspace) {
-      emitToWorkspace(workspaceId, 'db_update', {
-        schemaId,
-        name,
-        tables: JSON.parse(scripts).tables || [],
-        timestamp: new Date().toISOString()
-      });
-    }
+    if (emitToWorkspace) emitToWorkspace(workspaceId, 'db_update', { schemaId, name, tables: JSON.parse(scripts).tables || [], timestamp: new Date().toISOString() });
 
-    res.json({
-      success: true,
-      message: 'Schema updated successfully',
-      sharedSchemas: workspace.sharedSchemas
-    });
+    res.json({ success: true, message: 'Schema updated successfully', sharedSchemas: workspace.sharedSchemas });
 
   } catch (error) {
     console.error('❌ Error updating shared schemas:', error);
@@ -423,22 +296,17 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(409).json({ error: 'Workspace with this ID already exists' });
     }
 
-    const workspace = new Workspace({
-      id,
-      name,
-      ownerId: req.userId,
-      members: [{
-        username: req.user.username || 'current_user',
-        role: 'owner',
-        joinedAt: new Date()
-      }],
-      sharedSchemas: []
-    });
+  const workspace = new Workspace({ id, name, ownerId: req.userId, sharedSchemas: [] });
+  await workspace.save();
 
-    await workspace.save();
-    console.log('✅ Workspace created successfully:', workspace.id);
-    
-    res.status(201).json(workspace);
+  // Create owner member record
+  const ownerMember = new Member({ workspaceId: id, id: require('uuid').v4(), username: req.user.username || 'current_user', role: 'owner', joinedAt: new Date(), updatedAt: new Date() });
+  await ownerMember.save();
+
+  console.log('✅ Workspace created successfully:', workspace.id);
+  const out = workspace.toObject();
+  out.members = [{ username: ownerMember.username, role: ownerMember.role, joinedAt: ownerMember.joinedAt }];
+  res.status(201).json(out);
   } catch (error) {
     console.error('❌ Error creating workspace:', error);
     res.status(500).json({ error: 'Failed to create workspace' });

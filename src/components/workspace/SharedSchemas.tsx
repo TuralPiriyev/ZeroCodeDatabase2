@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Download, Eye, Clock, AlertCircle, Loader } from 'lucide-react';
 import { apiService } from '../../services/apiService';
+import { useDatabase } from '../../context/DatabaseContext';
 import { socketService } from '../../services/socketService';
 
 interface SharedSchema {
@@ -13,9 +14,10 @@ interface SharedSchema {
 interface SharedSchemasProps {
   workspaceId: string;
   onSchemaLoad: (schema: any) => void;
+  currentUserRole?: 'owner' | 'editor' | 'viewer';
 }
 
-const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad }) => {
+const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad, currentUserRole = 'viewer' }) => {
   const [schemas, setSchemas] = useState<SharedSchema[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +104,30 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
     return null;
   };
 
+  const { currentSchema } = useDatabase();
+
+  const replaceWithCurrent = async () => {
+    if (!currentSchema) return setError('No current schema loaded to share');
+
+    try {
+      setIsLoading(true);
+      const payload = {
+        schemaId: currentSchema.id || `${Date.now()}`,
+        name: currentSchema.name || 'Shared Schema',
+        scripts: JSON.stringify(currentSchema)
+      };
+
+      const res = await apiService.post(`/workspaces/${workspaceId}/schemas`, payload);
+      console.log('✅ Replaced/Shared schema successfully:', res);
+      loadSharedSchemas();
+    } catch (err) {
+      console.error('❌ Failed to replace schema:', err);
+      setError(err instanceof Error ? err.message : 'Failed to replace schema');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 max-h-96 overflow-y-auto">
       <div className="flex items-center justify-between mb-4">
@@ -119,15 +145,29 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
           </div>
         </div>
         
-        <button
-          onClick={loadSharedSchemas}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors duration-200"
-          title="Refresh schemas"
-        >
-          <Database className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {currentUserRole === 'owner' && (
+            <button
+              onClick={replaceWithCurrent}
+              disabled={isLoading}
+              className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm transition-colors duration-200"
+              title="Replace shared schema with current schema"
+            >
+              <Database className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              Replace with Current
+            </button>
+          )}
+
+          <button
+            onClick={loadSharedSchemas}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors duration-200"
+            title="Refresh schemas"
+          >
+            <Database className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {error && (

@@ -16,21 +16,7 @@ const WorkspaceSchema = new Schema({
     type: String, 
     required: true 
   },
-  members: [{
-    username: { 
-      type: String, 
-      required: true 
-    },
-    role: { 
-      type: String, 
-      enum: ['owner', 'editor', 'viewer'], 
-      required: true 
-    },
-    joinedAt: { 
-      type: Date, 
-      default: Date.now 
-    }
-  }],
+  // members are stored in a separate collection (Member) to allow grouping and queries
   sharedSchemas: [{
     schemaId: { 
       type: String, 
@@ -68,7 +54,6 @@ const WorkspaceSchema = new Schema({
 // Indexes for performance
 WorkspaceSchema.index({ id: 1 });
 WorkspaceSchema.index({ ownerId: 1 });
-WorkspaceSchema.index({ 'members.username': 1 });
 WorkspaceSchema.index({ isActive: 1 });
 
 // Transform toJSON to ensure dates are ISO strings
@@ -78,13 +63,7 @@ WorkspaceSchema.set('toJSON', {
     if (ret.createdAt instanceof Date) ret.createdAt = ret.createdAt.toISOString();
     if (ret.updatedAt instanceof Date) ret.updatedAt = ret.updatedAt.toISOString();
     
-    // Transform members array
-    if (ret.members && Array.isArray(ret.members)) {
-      ret.members = ret.members.map(member => ({
-        ...member,
-        joinedAt: member.joinedAt instanceof Date ? member.joinedAt.toISOString() : member.joinedAt
-      }));
-    }
+  // members are provided by the Member collection when needed; keep transformation minimal
     
     // Transform sharedSchemas array
     if (ret.sharedSchemas && Array.isArray(ret.sharedSchemas)) {
