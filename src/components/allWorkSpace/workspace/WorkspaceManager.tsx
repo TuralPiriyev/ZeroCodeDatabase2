@@ -50,14 +50,14 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
   const initializeWorkspace = async () => {
     try {
       // Connect to Socket.IO
-      await socketService.connect();
-      setIsConnected(true);
-      
-      // Join workspace room
-      socketService.joinWorkspace(workspaceId);
-      
-      // Load workspace data
-      await loadWorkspace();
+  await socketService.connect();
+  setIsConnected(true);
+
+  // Join workspace room (will store and emit after connect if socket not ready)
+  socketService.joinWorkspace(workspaceId);
+
+  // Load workspace data (with fallback if the requested workspace doesn't exist)
+  await loadWorkspace();
       
     } catch (error) {
       console.error('❌ Failed to initialize workspace:', error);
@@ -92,7 +92,35 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
       }
     } catch (error) {
       console.error('❌ Error loading workspace:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load workspace');
+
+      // Fallback strategy when specific workspace is not found or inaccessible:
+      // 1) Try to list workspaces for the user and pick the first one.
+      // 2) If none exist, attempt to create a workspace with the requested id (requires auth).
+      try {
+        const list = await apiService.get('/workspaces');
+        if (Array.isArray(list) && list.length > 0) {
+          console.log('ℹ️ Falling back to first available workspace:', list[0].id);
+          setWorkspace(list[0]);
+          // Ensure socket joined the new workspace id
+          try { socketService.joinWorkspace(list[0].id); } catch (e) { /* ignore */ }
+          return;
+        }
+      } catch (listErr) {
+        console.warn('ℹ️ Failed to list user workspaces as fallback:', listErr);
+      }
+
+      // If no workspaces found, try to create the requested default workspace.
+      try {
+        console.log('🏗️ Attempting to create workspace:', workspaceId);
+        const created = await apiService.post('/workspaces', { id: workspaceId, name: 'Default Workspace' });
+        console.log('✅ Created workspace as fallback:', created.id || created);
+        setWorkspace(created);
+        try { socketService.joinWorkspace(created.id || workspaceId); } catch (e) { /* ignore */ }
+        return;
+      } catch (createErr) {
+        console.error('❌ Failed to create fallback workspace:', createErr);
+        setError(createErr instanceof Error ? createErr.message : 'Failed to load workspace');
+      }
     } finally {
       setIsLoading(false);
     }
