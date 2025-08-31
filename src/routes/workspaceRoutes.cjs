@@ -311,7 +311,7 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
     const member = await Member.findOne({ workspaceId, username: req.user.username || 'current_user' });
-    if (!member) return res.status(403).json({ error: 'Insufficient permissions' });
+    if (!member || member.role !== 'owner') return res.status(403).json({ error: 'Only workspace owners can update shared schemas' });
 
     // If updating an existing schema (replace), only owner can perform that operation.
     const existingSchemaIndex = workspace.sharedSchemas.findIndex(schema => schema.schemaId === schemaId);
