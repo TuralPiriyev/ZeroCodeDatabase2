@@ -99,7 +99,7 @@ const TeamMembersList: React.FC<TeamMembersListProps> = ({
   };
 
   const removeMember = async (username: string) => {
-    if (!window.confirm(`Are you sure you want to remove ${username} from this workspace?`)) {
+  if (!window.confirm(`Are you sure you want to remove ${username} from this workspace?`)) {
       return;
     }
 
@@ -114,6 +114,20 @@ const TeamMembersList: React.FC<TeamMembersListProps> = ({
     } catch (error) {
       console.error('❌ Error removing member:', error);
       setError(error instanceof Error ? error.message : 'Failed to remove member');
+    }
+  };
+
+  const transferOwnership = async (toUsername: string) => {
+    if (!window.confirm(`Transfer ownership to ${toUsername}? This will make them the new workspace owner.`)) return;
+    try {
+      const data = await apiService.post(`/workspaces/${workspaceId}/transfer-owner`, { toUsername });
+      console.log('✅ Ownership transferred:', data);
+      if (data.members && Array.isArray(data.members)) {
+        onMembersUpdate(data.members);
+      }
+    } catch (error) {
+      console.error('❌ Error transferring ownership:', error);
+      setError(error instanceof Error ? error.message : 'Failed to transfer ownership');
     }
   };
 
@@ -286,7 +300,16 @@ const TeamMembersList: React.FC<TeamMembersListProps> = ({
                       <option value="viewer">Viewer</option>
                     </select>
                   )}
-                  
+                  {currentUserRole === 'owner' && !isOwner && (
+                    <button
+                      onClick={() => transferOwnership(member.username)}
+                      className="p-2 text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 rounded-lg transition-colors duration-200"
+                      title={`Transfer ownership to ${member.username}`}
+                    >
+                      <Crown className="w-4 h-4" />
+                    </button>
+                  )}
+
                   {canRemove && (
                     <button
                       onClick={() => removeMember(member.username)}
