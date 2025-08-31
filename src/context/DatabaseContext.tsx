@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 // @ts-ignore: module has no type declarations
 import initSqlJs from 'sql.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -241,7 +241,38 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     initSQL();
   }, []);
   const importSchema = useCallback((schema: Schema) => {
-    setCurrentSchema(schema);
+    // When importing a schema from server, try to restore any local snapshot
+    const snapshotKey = `collab:${schema.id}`;
+    try {
+      const raw = localStorage.getItem(snapshotKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.schema) {
+          console.log('Restoring local collaboration snapshot for', schema.id);
+          // hydrate dates for core fields
+          const s = parsed.schema as Schema;
+          if (s.createdAt) s.createdAt = new Date(s.createdAt as any);
+          if (s.updatedAt) s.updatedAt = new Date(s.updatedAt as any);
+          if (s.lastSyncedAt) s.lastSyncedAt = new Date(s.lastSyncedAt as any);
+          if (Array.isArray(s.members)) {
+            s.members = s.members.map(m => ({ ...m, joinedAt: m.joinedAt ? new Date(m.joinedAt as any) : new Date() }));
+          }
+          if (Array.isArray(s.invitations)) {
+            s.invitations = s.invitations.map(inv => ({ ...inv, createdAt: inv.createdAt ? new Date(inv.createdAt as any) : new Date(), expiresAt: inv.expiresAt ? new Date(inv.expiresAt as any) : new Date() }));
+          }
+
+          // Use the locally saved snapshot as the current schema to preserve edits made offline
+          setCurrentSchema(s);
+        } else {
+          setCurrentSchema(schema);
+        }
+      } else {
+        setCurrentSchema(schema);
+      }
+    } catch (err) {
+      console.warn('Failed to restore local snapshot, importing server schema instead:', err);
+      setCurrentSchema(schema);
+    }
     
     // Recreate tables and relationships in SQL engine
     if (sqlEngine) {
@@ -299,6 +330,90 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       }
     }
   }, [sqlEngine]);
+
+  // --- Local snapshot persistence for collaboration ---
+  const snapshotTimer = useRef<number | null>(null);
+  const SNAPSHOT_PREFIX = 'collab:';
+
+  const saveSnapshot = useCallback((workspaceId: string, schema: Schema) => {
+    try {
+      const key = `${SNAPSHOT_PREFIX}${workspaceId}`;
+      const payload = {
+        savedAt: new Date().toISOString(),
+        schema
+      };
+      localStorage.setItem(key, JSON.stringify(payload));
+      // console.log('Saved local collaboration snapshot:', key);
+    } catch (err) {
+      console.warn('Failed to save collaboration snapshot:', err);
+    }
+  }, []);
+
+  const loadSnapshot = useCallback((workspaceId: string): Schema | null => {
+    try {
+      const key = `${SNAPSHOT_PREFIX}${workspaceId}`;
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.schema) return null;
+      const s = parsed.schema as Schema;
+      if (s.createdAt) s.createdAt = new Date(s.createdAt as any);
+      if (s.updatedAt) s.updatedAt = new Date(s.updatedAt as any);
+      if (s.lastSyncedAt) s.lastSyncedAt = new Date(s.lastSyncedAt as any);
+      if (Array.isArray(s.members)) {
+        s.members = s.members.map(m => ({ ...m, joinedAt: m.joinedAt ? new Date(m.joinedAt as any) : new Date() }));
+      }
+      if (Array.isArray(s.invitations)) {
+        s.invitations = s.invitations.map(inv => ({ ...inv, createdAt: inv.createdAt ? new Date(inv.createdAt as any) : new Date(), expiresAt: inv.expiresAt ? new Date(inv.expiresAt as any) : new Date() }));
+      }
+      return s;
+    } catch (err) {
+      console.warn('Failed to load collaboration snapshot:', err);
+      return null;
+    }
+  }, []);
+
+  // Persist current schema to localStorage (debounced) so changes are preserved when user toggles collaboration off
+  useEffect(() => {
+    const id = currentSchema?.id;
+    if (!id) return;
+
+    if (snapshotTimer.current) {
+      window.clearTimeout(snapshotTimer.current);
+    }
+
+    // debounce save by 1 second
+    snapshotTimer.current = window.setTimeout(() => {
+      saveSnapshot(id, currentSchema);
+      snapshotTimer.current = null;
+    }, 1000);
+
+    return () => {
+      if (snapshotTimer.current) {
+        window.clearTimeout(snapshotTimer.current);
+        snapshotTimer.current = null;
+      }
+    };
+  }, [currentSchema, saveSnapshot]);
+
+  // Save immediately on page unload to avoid losing recent edits
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      try {
+        if (currentSchema && currentSchema.id) {
+          // synchronous localStorage write
+          const key = `collab:${currentSchema.id}`;
+          const payload = { savedAt: new Date().toISOString(), schema: currentSchema };
+          localStorage.setItem(key, JSON.stringify(payload));
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [currentSchema]);
   // Enhanced team collaboration functions with MongoDB integration
   const validateUsername = useCallback(async (username: string): Promise<boolean> => {
     return await mongoService.validateUsername(username);
@@ -520,7 +635,14 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         if (firstSchema.scripts) {
           try {
             const schemaData = JSON.parse(firstSchema.scripts);
-            importSchema(schemaData);
+            // If we have a local snapshot for this workspace, prefer it to preserve offline edits
+            const local = loadSnapshot(firstSchema.workspaceId || workspaceId);
+            if (local) {
+              console.log('Using local snapshot instead of remote shared schema');
+              importSchema(local);
+            } else {
+              importSchema(schemaData);
+            }
           } catch (error) {
             console.error('Failed to parse shared schema:', error);
           }
