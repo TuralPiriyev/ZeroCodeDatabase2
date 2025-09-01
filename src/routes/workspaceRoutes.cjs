@@ -24,7 +24,26 @@ router.get('/', authenticate, async (req, res) => {
   const workspaces = Array.from(workspacesMap.values());
 
     console.log('✅ Found workspaces:', workspaces.length);
-    res.json(workspaces);
+    // Attach current user's role for each workspace
+    const workspaceIds = workspaces.map(w => w.id);
+    const membersForWorkspaces = await Member.find({ workspaceId: { $in: workspaceIds } }).lean();
+
+    const workspacesOut = workspaces.map(w => {
+      const obj = w.toObject();
+      let role = 'viewer';
+      // Owner check (ownerId may be ObjectId or username)
+      const isOwner = obj.ownerId && (obj.ownerId.toString ? obj.ownerId.toString() === req.userId : obj.ownerId === usernameLookup || obj.ownerId === req.userId);
+      if (isOwner) role = 'owner';
+      else if (usernameLookup) {
+        const memberRec = membersForWorkspaces.find(m => m.workspaceId === obj.id && m.username.toLowerCase() === usernameLookup.toLowerCase());
+        if (memberRec && memberRec.role) role = memberRec.role;
+      }
+      // include a membersCount and role for convenience
+      const membersCount = membersForWorkspaces.filter(m => m.workspaceId === obj.id).length;
+      return { ...obj, role, membersCount };
+    });
+
+    res.json(workspacesOut);
   } catch (error) {
     console.error('❌ Error fetching workspaces:', error);
     res.status(500).json({ error: 'Failed to fetch workspaces' });
@@ -388,6 +407,38 @@ router.post('/', authenticate, async (req, res) => {
   } catch (error) {
     console.error('❌ Error creating workspace:', error);
     res.status(500).json({ error: 'Failed to create workspace' });
+  }
+});
+
+// DELETE /api/workspaces/:workspaceId - Delete a workspace (owner only)
+router.delete('/:workspaceId', authenticate, async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    console.log('🗑️ Deleting workspace:', workspaceId);
+
+    const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+
+    const usernameLookup = req.user && req.user.username ? req.user.username : null;
+    const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
+    if (!isOwner) return res.status(403).json({ error: 'Only workspace owners can delete the workspace' });
+
+    // Mark workspace inactive and remove member records
+    workspace.isActive = false;
+    workspace.updatedAt = new Date();
+    await workspace.save();
+
+    await Member.deleteMany({ workspaceId });
+
+    console.log('✅ Workspace deleted (soft):', workspaceId);
+
+    const emitToWorkspace = req.app.get('emitToWorkspace');
+    if (emitToWorkspace) emitToWorkspace(workspaceId, 'workspace_deleted', { workspaceId });
+
+    res.json({ success: true, message: 'Workspace deleted' });
+  } catch (error) {
+    console.error('❌ Error deleting workspace:', error);
+    res.status(500).json({ error: 'Failed to delete workspace' });
   }
 });
 
