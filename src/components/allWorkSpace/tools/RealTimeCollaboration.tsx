@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import WorkspaceManager from "../workspace/WorkspaceManager";
 import { simpleWebSocketService } from "../../../services/simpleWebSocketService";
 import { apiService } from '../../../services/apiService';
+import { usePortfolio } from '../../../context/PortfolioContext';
+import { useDatabase } from '../../../context/DatabaseContext';
 
 interface WorkspaceSummary {
   id: string;
@@ -58,6 +60,16 @@ const RealTimeCollaboration: React.FC = () => {
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [creating, setCreating] = useState(false);
 
+  // NEW: portfolio & current schema selection for sharing on create
+  const { portfolios, loadPortfolios } = usePortfolio();
+  const { currentSchema } = useDatabase();
+  const [selectedSchemaOption, setSelectedSchemaOption] = useState<string>(''); // '' | 'current' | portfolioId
+
+  useEffect(() => {
+    // load portfolios for selection
+    loadPortfolios().catch(e => console.warn('Failed to load portfolios for workspace create', e));
+  }, []);
+
   const createWorkspace = async () => {
     if (!newWorkspaceName.trim()) return;
     setCreating(true);
@@ -68,6 +80,43 @@ const RealTimeCollaboration: React.FC = () => {
       setWorkspaces(updated);
       setCurrentWorkspaceId(out.id);
       setNewWorkspaceName('');
+
+      // If user selected a schema to share on creation, post it to the new workspace
+      try {
+        if (selectedSchemaOption) {
+          if (selectedSchemaOption === 'current') {
+            if (!currentSchema) {
+              console.warn('No current schema to share');
+            } else {
+              const payload = {
+                schemaId: (currentSchema as any).id || `${Date.now()}`,
+                name: (currentSchema as any).name || 'Shared Schema',
+                scripts: JSON.stringify(currentSchema),
+              };
+              await apiService.post(`/workspaces/${out.id}/schemas`, payload);
+            }
+          } else {
+            // treat as portfolio id
+            const p = portfolios.find((pt: any) => pt._id === selectedSchemaOption);
+            if (p) {
+              const payload = {
+                schemaId: p._id,
+                name: p.name || `Portfolio ${p._id}`,
+                scripts: p.scripts,
+              };
+              await apiService.post(`/workspaces/${out.id}/schemas`, payload);
+            } else {
+              console.warn('Selected portfolio not found for sharing during create');
+            }
+          }
+          // Clear selection after attempting share
+          setSelectedSchemaOption('');
+        }
+      } catch (err) {
+        // non-fatal: workspace created, but sharing failed
+        console.error('Failed sharing selected schema during workspace creation:', err);
+      }
+
     } catch (err) {
       console.error('❌ Create workspace failed:', err);
       setError('Failed to create workspace');
@@ -128,6 +177,22 @@ const RealTimeCollaboration: React.FC = () => {
             />
             <button onClick={createWorkspace} disabled={creating} className="px-3 py-2 bg-blue-600 text-white rounded">Create</button>
           </div>
+
+          {/* NEW: Schema selection for sharing when creating workspace */}
+          <div className="mt-3 text-sm">
+            <label className="block text-xs text-gray-600 mb-1">Share a schema with this new workspace (optional)</label>
+            <div className="flex gap-2">
+              <select value={selectedSchemaOption} onChange={e => setSelectedSchemaOption(e.target.value)} className="px-3 py-2 border rounded bg-white text-sm">
+                <option value="">No schema</option>
+                <option value="current">Use current open schema</option>
+                {portfolios.map((p: any) => (
+                  <option key={p._id} value={p._id}>{`Portfolio: ${p.name || p._id}`}</option>
+                ))}
+              </select>
+              <div className="text-xs text-gray-500 flex items-center">Select a schema to auto-share when the workspace is created.</div>
+            </div>
+          </div>
+
         </div>
 
         {workspaces.length > 0 && (
