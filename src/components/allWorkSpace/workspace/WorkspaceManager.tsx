@@ -38,6 +38,7 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'members' | 'invite' | 'schemas'>('members');
   const [isConnected, setIsConnected] = useState(false);
 
@@ -74,11 +75,34 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
 
     try {
       console.log('📂 Loading workspace:', workspaceId);
-      const data = await apiService.get(`/workspaces/${workspaceId}`);
+      const apiBase = (import.meta.env.VITE_API_BASE_URL || window.location.origin).replace(/\/+$/, '');
+      const res = await fetch(`${apiBase}/workspaces/${workspaceId}`, {
+        credentials: 'include'
+      });
+
+      if (res.status === 401) {
+        setStatusError('unauthenticated');
+        setError('You must sign in to access collaboration');
+        return;
+      }
+
+      if (res.status === 403) {
+        setStatusError('access_denied');
+        setError('Access denied to this workspace');
+        return;
+      }
+
+      if (!res.ok) {
+        // other error (404, 500, etc.)
+        setStatusError('not_found');
+        setError('Workspace not found or unavailable');
+        return;
+      }
+
+      const data = await res.json();
       console.log('✅ Workspace loaded:', data);
-      
       setWorkspace(data);
-      
+
       // Load first shared schema if available (only if owner or editor)
       if (data.sharedSchemas && data.sharedSchemas.length > 0) {
         const firstSchema = data.sharedSchemas[0];
@@ -92,37 +116,10 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
           }
         }
       }
-    } catch (error) {
-      console.error('❌ Error loading workspace:', error);
-
-      // Fallback strategy when specific workspace is not found or inaccessible:
-      // 1) Try to list workspaces for the user and pick the first one.
-      // 2) If none exist, attempt to create a workspace with the requested id (requires auth).
-      try {
-        const list = await apiService.get('/workspaces');
-        if (Array.isArray(list) && list.length > 0) {
-          console.log('ℹ️ Falling back to first available workspace:', list[0].id);
-          setWorkspace(list[0]);
-          // Ensure socket joined the new workspace id
-          try { socketService.joinWorkspace(list[0].id); } catch (e) { /* ignore */ }
-          return;
-        }
-      } catch (listErr) {
-        console.warn('ℹ️ Failed to list user workspaces as fallback:', listErr);
-      }
-
-      // If no workspaces found, try to create the requested default workspace.
-      try {
-        console.log('🏗️ Attempting to create workspace:', workspaceId);
-        const created = await apiService.post('/workspaces', { id: workspaceId, name: 'Default Workspace' });
-        console.log('✅ Created workspace as fallback:', created.id || created);
-        setWorkspace(created);
-        try { socketService.joinWorkspace(created.id || workspaceId); } catch (e) { /* ignore */ }
-        return;
-      } catch (createErr) {
-        console.error('❌ Failed to create fallback workspace:', createErr);
-        setError(createErr instanceof Error ? createErr.message : 'Failed to load workspace');
-      }
+    } catch (err) {
+      console.error('❌ Error loading workspace (network):', err);
+      setStatusError('network');
+      setError('Network error while loading workspace');
     } finally {
       setIsLoading(false);
     }
