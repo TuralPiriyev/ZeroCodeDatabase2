@@ -13,9 +13,21 @@ router.get('/', authenticate, async (req, res) => {
     console.log('📂 Fetching workspaces for user:', req.userId);
   // Find workspaces where user is owner OR has a member record
   const ownerWorkspaces = await Workspace.find({ ownerId: req.userId, isActive: true }).sort({ updatedAt: -1 });
-  const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  // Use case-insensitive username matching so invited users see their workspaces regardless of stored casing
-  const memberRecords = usernameLookup ? await Member.find({ username: new RegExp('^' + usernameLookup + '$', 'i') }).distinct('workspaceId') : [];
+  // Build a set of possible identifiers for the current user: userId, username, email
+  const identifiers = [];
+  if (req.userId) identifiers.push(String(req.userId));
+  if (req.user && req.user.username) identifiers.push(String(req.user.username));
+  if (req.user && req.user.email) identifiers.push(String(req.user.email));
+
+  // Helper to escape user-provided strings for safe regex construction
+  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Use case-insensitive matching for any identifier so invited users see their workspaces regardless of stored casing or identifier form
+  let memberRecords = [];
+  if (identifiers.length > 0) {
+    const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
+    memberRecords = await Member.find({ $or: or }).distinct('workspaceId');
+  }
   const memberWorkspaces = await Workspace.find({ id: { $in: memberRecords }, isActive: true }).sort({ updatedAt: -1 });
 
   // Merge unique workspaces (owner first)
@@ -63,9 +75,17 @@ router.get('/:workspaceId', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Workspace not found' });
     }
 
-    // Check membership via Member collection
-  const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const memberRecord = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
+    // Check membership via Member collection using multiple identifiers (userId, username, email)
+    const identifiers = [];
+    if (req.userId) identifiers.push(String(req.userId));
+    if (req.user && req.user.username) identifiers.push(String(req.user.username));
+    if (req.user && req.user.email) identifiers.push(String(req.user.email));
+    const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+    let memberRecord = null;
+    if (identifiers.length > 0) {
+      const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
+      memberRecord = await Member.findOne({ workspaceId, $or: or });
+    }
   // ownerId might be userId (ObjectId) or username (string) depending on historical data
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if (!memberRecord && !isOwner) {
@@ -93,8 +113,17 @@ router.get('/:workspaceId/members', authenticate, async (req, res) => {
   const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
   if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
+  const identifiers = [];
+  if (req.userId) identifiers.push(String(req.userId));
+  if (req.user && req.user.username) identifiers.push(String(req.user.username));
+  if (req.user && req.user.email) identifiers.push(String(req.user.email));
+  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  let memberRecord = null;
+  if (identifiers.length > 0) {
+    const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
+    memberRecord = await Member.findOne({ workspaceId, $or: or });
+  }
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const memberRecord = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if (!memberRecord && !isOwner) return res.status(403).json({ error: 'Access denied' });
 
@@ -128,8 +157,16 @@ router.post('/:workspaceId/invite', authenticate, async (req, res) => {
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
     // Check if requester is owner or editor via Member collection
-  const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const requesterMember = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
+  const identifiers = [];
+  if (req.userId) identifiers.push(String(req.userId));
+  if (req.user && req.user.username) identifiers.push(String(req.user.username));
+  if (req.user && req.user.email) identifiers.push(String(req.user.email));
+  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  let requesterMember = null;
+  if (identifiers.length > 0) {
+    const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
+    requesterMember = await Member.findOne({ workspaceId, $or: or });
+  }
     const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
     if ((!requesterMember || (requesterMember.role !== 'owner' && requesterMember.role !== 'editor')) && !isOwner) {
       return res.status(403).json({ error: 'Only owners and editors can invite users' });
@@ -155,9 +192,10 @@ router.post('/:workspaceId/invite', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Check if user is already a member
-    const existingMember = await Member.findOne({ workspaceId, username: new RegExp('^' + username + '$', 'i') });
-    if (existingMember) return res.status(409).json({ error: 'User is already a member of this workspace' });
+  // Check if user is already a member (case-insensitive)
+  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  const existingMember = await Member.findOne({ workspaceId, username: new RegExp('^' + escapeForRegex(username) + '$', 'i') });
+  if (existingMember) return res.status(409).json({ error: 'User is already a member of this workspace' });
 
     // Add member record
     const newMember = new Member({
@@ -211,12 +249,21 @@ router.put('/:workspaceId/members/:username', authenticate, async (req, res) => 
   const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
   if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
+  const identifiers = [];
+  if (req.userId) identifiers.push(String(req.userId));
+  if (req.user && req.user.username) identifiers.push(String(req.user.username));
+  if (req.user && req.user.email) identifiers.push(String(req.user.email));
+  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  let requesterMember = null;
+  if (identifiers.length > 0) {
+    const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
+    requesterMember = await Member.findOne({ workspaceId, $or: or });
+  }
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const requesterMember = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if ((!requesterMember || requesterMember.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can update member roles' });
 
-  const memberToUpdate = await Member.findOne({ workspaceId, username: new RegExp('^' + username + '$', 'i') });
+  const memberToUpdate = await Member.findOne({ workspaceId, username: new RegExp('^' + escapeForRegex(username) + '$', 'i') });
   if (!memberToUpdate) return res.status(404).json({ error: 'Member not found' });
   if (memberToUpdate.role === 'owner') return res.status(400).json({ error: 'Cannot change owner role' });
 
@@ -248,12 +295,21 @@ router.delete('/:workspaceId/members/:username', authenticate, async (req, res) 
   if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
   // Check if requester is owner via Member collection
+  const identifiers = [];
+  if (req.userId) identifiers.push(String(req.userId));
+  if (req.user && req.user.username) identifiers.push(String(req.user.username));
+  if (req.user && req.user.email) identifiers.push(String(req.user.email));
+  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  let requesterMember = null;
+  if (identifiers.length > 0) {
+    const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
+    requesterMember = await Member.findOne({ workspaceId, $or: or });
+  }
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const requesterMember = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if ((!requesterMember || requesterMember.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can remove members' });
 
-  const memberToRemove = await Member.findOne({ workspaceId, username: new RegExp('^' + username + '$', 'i') });
+  const memberToRemove = await Member.findOne({ workspaceId, username: new RegExp('^' + escapeForRegex(username) + '$', 'i') });
   if (!memberToRemove) return res.status(404).json({ error: 'Member not found' });
   if (memberToRemove.role === 'owner') return res.status(400).json({ error: 'Cannot remove workspace owner' });
 
@@ -283,12 +339,21 @@ router.post('/:workspaceId/transfer-owner', authenticate, async (req, res) => {
     const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
+  const identifiers = [];
+  if (req.userId) identifiers.push(String(req.userId));
+  if (req.user && req.user.username) identifiers.push(String(req.user.username));
+  if (req.user && req.user.email) identifiers.push(String(req.user.email));
+  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  let requesterMember = null;
+  if (identifiers.length > 0) {
+    const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
+    requesterMember = await Member.findOne({ workspaceId, $or: or });
+  }
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const requesterMember = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if ((!requesterMember || requesterMember.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can transfer ownership' });
 
-  const newOwnerMember = await Member.findOne({ workspaceId, username: new RegExp('^' + toUsername + '$', 'i') });
+  const newOwnerMember = await Member.findOne({ workspaceId, username: new RegExp('^' + escapeForRegex(toUsername) + '$', 'i') });
     if (!newOwnerMember) return res.status(404).json({ error: 'Target member not found' });
     if (newOwnerMember.role === 'owner') return res.status(400).json({ error: 'User is already the owner' });
 
@@ -345,8 +410,17 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
     const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
+  const identifiers = [];
+  if (req.userId) identifiers.push(String(req.userId));
+  if (req.user && req.user.username) identifiers.push(String(req.user.username));
+  if (req.user && req.user.email) identifiers.push(String(req.user.email));
+  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  let member = null;
+  if (identifiers.length > 0) {
+    const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
+    member = await Member.findOne({ workspaceId, $or: or });
+  }
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const member = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if ((!member || member.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can update shared schemas' });
 
@@ -403,8 +477,17 @@ router.put('/:workspaceId/schemas', authenticate, async (req, res) => {
     const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
+    const identifiers = [];
+    if (req.userId) identifiers.push(String(req.userId));
+    if (req.user && req.user.username) identifiers.push(String(req.user.username));
+    if (req.user && req.user.email) identifiers.push(String(req.user.email));
+    const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+    let member = null;
+    if (identifiers.length > 0) {
+      const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
+      member = await Member.findOne({ workspaceId, $or: or });
+    }
     const usernameLookup = req.user && req.user.username ? req.user.username : null;
-    const member = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
     const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
     if ((!member || member.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can update shared schemas' });
 
