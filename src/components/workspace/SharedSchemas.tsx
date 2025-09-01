@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Database, Download, Eye, Clock, AlertCircle, Loader } from 'lucide-react';
 import { apiService } from '../../services/apiService';
 import { useDatabase } from '../../context/DatabaseContext';
+import { usePortfolio } from '../../context/PortfolioContext';
 import { socketService } from '../../services/socketService';
 
 interface SharedSchema {
@@ -19,11 +20,16 @@ interface SharedSchemasProps {
 
 const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad, currentUserRole = 'viewer' }) => {
   const [schemas, setSchemas] = useState<SharedSchema[]>([]);
+  const { portfolios, loadPortfolios } = usePortfolio();
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null);
+  const [selectedSharedSchemaId, setSelectedSharedSchemaId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSharedSchemas();
+  // load portfolios for owner to choose from
+  loadPortfolios().catch(e => console.warn('Failed to load portfolios for SharedSchemas', e));
 
     // Listen for real-time schema updates
     const handleDbUpdate = (data: any) => {
@@ -128,6 +134,35 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
     }
   };
 
+  const shareFromPortfolio = async () => {
+    if (!selectedPortfolioId) return setError('Please select a portfolio schema to share');
+    const p = portfolios.find(pt => pt._id === selectedPortfolioId);
+    if (!p) return setError('Selected portfolio not found');
+
+    try {
+      setIsLoading(true);
+      const payload = {
+        schemaId: p._id,
+        name: p.name || `Portfolio ${p._id}`,
+        scripts: p.scripts
+      };
+
+      // If user selected an existing shared schema to replace, use that schemaId
+      if (selectedSharedSchemaId) payload.schemaId = selectedSharedSchemaId;
+
+      const res = await apiService.post(`/workspaces/${workspaceId}/schemas`, payload);
+      console.log('✅ Shared schema from portfolio:', res);
+      setSelectedPortfolioId(null);
+      setSelectedSharedSchemaId(null);
+      loadSharedSchemas();
+    } catch (err) {
+      console.error('❌ Failed to share from portfolio:', err);
+      setError(err instanceof Error ? err.message : 'Failed to share from portfolio');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 max-h-96 overflow-y-auto">
       <div className="flex items-center justify-between mb-4">
@@ -147,15 +182,48 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
         
         <div className="flex items-center gap-2">
           {currentUserRole === 'owner' && (
-            <button
-              onClick={replaceWithCurrent}
-              disabled={isLoading}
-              className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm transition-colors duration-200"
-              title="Replace shared schema with current schema"
-            >
-              <Database className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-              Replace with Current
-            </button>
+            <>
+              <select
+                value={selectedPortfolioId || ''}
+                onChange={(e) => setSelectedPortfolioId(e.target.value || null)}
+                className="px-3 py-2 border rounded bg-white text-sm"
+              >
+                <option value="">Select portfolio schema to share</option>
+                {portfolios.map(p => (
+                  <option key={p._id} value={p._id}>{p.name}</option>
+                ))}
+              </select>
+
+              <select
+                value={selectedSharedSchemaId || ''}
+                onChange={(e) => setSelectedSharedSchemaId(e.target.value || null)}
+                className="px-3 py-2 border rounded bg-white text-sm"
+                title="Optional: choose an existing shared schema to replace"
+              >
+                <option value="">(Optional) Replace existing shared schema</option>
+                {schemas.map(s => (
+                  <option key={s.schemaId} value={s.schemaId}>{s.name}</option>
+                ))}
+              </select>
+
+              <button
+                onClick={shareFromPortfolio}
+                disabled={isLoading || !selectedPortfolioId}
+                className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm transition-colors duration-200"
+              >
+                Share from Portfolio
+              </button>
+
+              <button
+                onClick={replaceWithCurrent}
+                disabled={isLoading}
+                className="flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm transition-colors duration-200"
+                title="Replace shared schema with current schema"
+              >
+                <Database className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                Replace with Current
+              </button>
+            </>
           )}
 
           <button
