@@ -313,7 +313,7 @@ router.delete('/:workspaceId/members/:username', authenticate, async (req, res) 
   if (!memberToRemove) return res.status(404).json({ error: 'Member not found' });
   if (memberToRemove.role === 'owner') return res.status(400).json({ error: 'Cannot remove workspace owner' });
 
-  await Member.deleteOne({ workspaceId, username: new RegExp('^' + username + '$', 'i') });
+  await Member.deleteOne({ workspaceId, username: new RegExp('^' + escapeForRegex(username) + '$', 'i') });
 
   console.log('✅ Member removed successfully');
   const emitToWorkspace = req.app.get('emitToWorkspace');
