@@ -6,7 +6,7 @@ import React, {
   useEffect,
   ReactNode,
 } from 'react';
-import axios from 'axios';
+import { apiService } from '../services/apiService';
 
 export interface Portfolio {
   _id: string;
@@ -27,57 +27,48 @@ const PortfolioContext = createContext<PortfolioContextType | undefined>(undefin
 export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
 
-  const getAuthHeader = useCallback(() => {
-    const token = localStorage.getItem('token');
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
-
   const loadPortfolios = useCallback(async () => {
     try {
-      const headers = { 'Content-Type': 'application/json', ...getAuthHeader() };
-      const res = await axios.get<Portfolio[]>('/portfolios', { headers });
-      setPortfolios(res.data);
+      // Use central apiService which handles base URL and Authorization header
+      const res = await apiService.get('/api/portfolios');
+      // apiService returns parsed JSON array
+      setPortfolios(Array.isArray(res) ? res : []);
     } catch (err) {
       console.error('Portfolioları yükləmə xətası:', err);
       setPortfolios([]);
     }
-  }, [getAuthHeader]);
+  }, []);
 
   const savePortfolio = useCallback(async (name: string, scripts: string) => {
     try {
-      const headers = { 'Content-Type': 'application/json', ...getAuthHeader() };
-      const res = await axios.post<Portfolio>(
-        '/portfolios',
-        { name, scripts },
-        { headers }
-      );
+      const res = await apiService.post('/api/portfolios', { name, scripts });
+      const data = res;
       setPortfolios(prev => {
-        const existingIndex = prev.findIndex(p => p._id === res.data._id);
+        const existingIndex = prev.findIndex(p => p._id === data._id);
         if (existingIndex >= 0) {
           const next = [...prev];
-          next[existingIndex] = res.data;
+          next[existingIndex] = data;
           return next;
         }
-        return [res.data, ...prev];
+        return [data, ...prev];
       });
     } catch (err: any) {
       console.error('Portfolio saxlama xətası:', err);
-      if (err.response?.data?.message) {
-        throw new Error(err.response.data.message);
+      if (err.message) {
+        throw new Error(err.message);
       }
       throw new Error('Portfolio saxlama xətası');
     }
-  }, [getAuthHeader]);
+  }, []);
 
   const deletePortfolio = useCallback(async (id: string) => {
     try {
-      const headers = { 'Content-Type': 'application/json', ...getAuthHeader() };
-      await axios.delete(`/portfolios/${id}`, { headers });
+      await apiService.delete(`/api/portfolios/${id}`);
       setPortfolios(prev => prev.filter(p => p._id !== id));
     } catch (err) {
       console.error('Portfolio silmə xətası:', err);
     }
-  }, [getAuthHeader]);
+  }, []);
 
   useEffect(() => {
     if (localStorage.getItem('token')) {
