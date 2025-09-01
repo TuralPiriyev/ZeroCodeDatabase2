@@ -204,7 +204,7 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
 
   const currentUser = getCurrentUser();
   const currentUserRole = workspace && currentUser
-    ? (workspace.members.find(m => m.username === currentUser.username)?.role || 'viewer')
+    ? (workspace.members.find(m => (m.username || '').toLowerCase() === (currentUser.username || '').toLowerCase())?.role || 'viewer')
     : 'viewer';
 
   return (
