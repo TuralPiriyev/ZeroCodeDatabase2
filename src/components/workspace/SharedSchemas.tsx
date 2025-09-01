@@ -11,7 +11,6 @@ interface SharedSchema {
   scripts: string;
   lastModified: string | Date;
 }
-
 interface SharedSchemasProps {
   workspaceId: string;
   onSchemaLoad: (schema: any) => void;
@@ -21,10 +20,15 @@ interface SharedSchemasProps {
 const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad, currentUserRole = 'viewer' }) => {
   const [schemas, setSchemas] = useState<SharedSchema[]>([]);
   const { portfolios, loadPortfolios } = usePortfolio();
-  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null);
   const [selectedSharedSchemaId, setSelectedSharedSchemaId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // New schema creation state (for owners)
+  const [newSchemaName, setNewSchemaName] = useState<string>('');
+  const [createMode, setCreateMode] = useState<'current' | 'portfolio' | 'custom'>('current');
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null);
+  const [customScripts, setCustomScripts] = useState<string>('');
+  const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
     loadSharedSchemas();
@@ -111,6 +115,48 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
   };
 
   const { currentSchema } = useDatabase();
+
+  // Create shared schema (owner action)
+  const createSharedSchema = async () => {
+    setError(null);
+    if (!newSchemaName) return setError('Please provide a name for the shared schema');
+
+    let scriptsPayload = '';
+    if (createMode === 'current') {
+      if (!currentSchema) return setError('No current schema loaded to share');
+      try {
+        scriptsPayload = JSON.stringify(currentSchema);
+      } catch (e) {
+        return setError('Failed to serialize current schema');
+      }
+    } else if (createMode === 'portfolio') {
+      if (!selectedPortfolioId) return setError('Please select a portfolio item');
+      const p = portfolios.find(pt => pt._id === selectedPortfolioId);
+      if (!p) return setError('Selected portfolio not found');
+      scriptsPayload = p.scripts;
+    } else {
+      if (!customScripts) return setError('Please paste schema JSON');
+      scriptsPayload = customScripts;
+      // quick validation
+      try { JSON.parse(scriptsPayload); } catch (e) { return setError('Invalid JSON in custom schema'); }
+    }
+
+    setIsCreating(true);
+    try {
+      const payload = { schemaId: `${Date.now()}`, name: newSchemaName, scripts: scriptsPayload };
+      const res = await apiService.post(`/workspaces/${workspaceId}/schemas`, payload);
+      console.log('✅ Created shared schema:', res);
+      // reset form
+      setNewSchemaName(''); setSelectedPortfolioId(null); setCustomScripts(''); setCreateMode('current');
+      // reload list
+      await loadSharedSchemas();
+    } catch (err) {
+      console.error('❌ Failed to create shared schema:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create shared schema');
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
   const replaceWithCurrent = async () => {
     if (!currentSchema) return setError('No current schema loaded to share');
