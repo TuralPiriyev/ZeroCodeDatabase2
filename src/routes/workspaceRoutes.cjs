@@ -14,7 +14,8 @@ router.get('/', authenticate, async (req, res) => {
   // Find workspaces where user is owner OR has a member record
   const ownerWorkspaces = await Workspace.find({ ownerId: req.userId, isActive: true }).sort({ updatedAt: -1 });
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const memberRecords = usernameLookup ? await Member.find({ username: usernameLookup }).distinct('workspaceId') : [];
+  // Use case-insensitive username matching so invited users see their workspaces regardless of stored casing
+  const memberRecords = usernameLookup ? await Member.find({ username: new RegExp('^' + usernameLookup + '$', 'i') }).distinct('workspaceId') : [];
   const memberWorkspaces = await Workspace.find({ id: { $in: memberRecords }, isActive: true }).sort({ updatedAt: -1 });
 
   // Merge unique workspaces (owner first)
