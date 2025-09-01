@@ -29,8 +29,10 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const loadPortfolios = useCallback(async () => {
     try {
-      // Use central apiService which handles base URL and Authorization header
-      const res = await apiService.get('/api/portfolios');
+  // Use central apiService which handles base URL and Authorization header
+  // note: apiService.baseURL may already include the '/api' prefix in some deployments,
+  // so keep endpoints consistent with other callers (no leading '/api').
+  const res = await apiService.get('/portfolios');
       // apiService returns parsed JSON array
       setPortfolios(Array.isArray(res) ? res : []);
     } catch (err) {
@@ -41,7 +43,7 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const savePortfolio = useCallback(async (name: string, scripts: string) => {
     try {
-      const res = await apiService.post('/api/portfolios', { name, scripts });
+  const res = await apiService.post('/portfolios', { name, scripts });
       const data = res;
       setPortfolios(prev => {
         const existingIndex = prev.findIndex(p => p._id === data._id);
@@ -63,7 +65,7 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const deletePortfolio = useCallback(async (id: string) => {
     try {
-      await apiService.delete(`/api/portfolios/${id}`);
+  await apiService.delete(`/portfolios/${id}`);
       setPortfolios(prev => prev.filter(p => p._id !== id));
     } catch (err) {
       console.error('Portfolio silmə xətası:', err);
