@@ -367,12 +367,73 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
     await workspace.save();
 
     const emitToWorkspace = req.app.get('emitToWorkspace');
-    if (emitToWorkspace) emitToWorkspace(workspaceId, 'db_update', { schemaId, name, tables: JSON.parse(scripts).tables || [], timestamp: new Date().toISOString() });
+    if (emitToWorkspace) {
+      // Safely parse scripts for tables information; protect against invalid JSON
+      let parsed = null;
+      try {
+        parsed = JSON.parse(scripts);
+      } catch (e) {
+        parsed = null;
+      }
+      const tables = parsed && parsed.tables ? parsed.tables : [];
+      emitToWorkspace(workspaceId, 'db_update', { schemaId, name, tables, timestamp: new Date().toISOString(), schema: scripts });
+    }
 
     res.json({ success: true, message: 'Schema updated successfully', sharedSchemas: workspace.sharedSchemas });
 
   } catch (error) {
     console.error('❌ Error updating shared schemas:', error);
+    res.status(500).json({ error: 'Failed to update shared schemas' });
+  }
+});
+
+// PUT /api/workspaces/:workspaceId/schemas - also support update via PUT (mirrors POST)
+router.put('/:workspaceId/schemas', authenticate, async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    const { schemaId, name, scripts } = req.body;
+
+    console.log('📊 (PUT) Updating shared schema:', { workspaceId, schemaId, name });
+
+    if (!schemaId || !name || !scripts) {
+      return res.status(400).json({ error: 'Schema ID, name, and scripts are required' });
+    }
+
+    const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+
+    const usernameLookup = req.user && req.user.username ? req.user.username : null;
+    const member = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
+    const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
+    if ((!member || member.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can update shared schemas' });
+
+    const existingSchemaIndex = workspace.sharedSchemas.findIndex(schema => schema.schemaId === schemaId);
+    if (existingSchemaIndex >= 0 && !isOwner) {
+      return res.status(403).json({ error: 'Only workspace owners can replace an existing shared schema' });
+    }
+
+    const schemaData = { schemaId, name, scripts, lastModified: new Date() };
+    if (existingSchemaIndex >= 0) {
+      workspace.sharedSchemas[existingSchemaIndex] = schemaData;
+      console.log('✅ Updated existing shared schema (PUT)');
+    } else {
+      workspace.sharedSchemas.push(schemaData);
+      console.log('✅ Added new shared schema (PUT)');
+    }
+    workspace.updatedAt = new Date();
+    await workspace.save();
+
+    const emitToWorkspace = req.app.get('emitToWorkspace');
+    if (emitToWorkspace) {
+      let parsed = null;
+      try { parsed = JSON.parse(scripts); } catch (e) { parsed = null; }
+      const tables = parsed && parsed.tables ? parsed.tables : [];
+      emitToWorkspace(workspaceId, 'db_update', { schemaId, name, tables, timestamp: new Date().toISOString(), schema: scripts });
+    }
+
+    res.json({ success: true, message: 'Schema updated successfully', sharedSchemas: workspace.sharedSchemas });
+  } catch (error) {
+    console.error('❌ Error updating shared schemas (PUT):', error);
     res.status(500).json({ error: 'Failed to update shared schemas' });
   }
 });
