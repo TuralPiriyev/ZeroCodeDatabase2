@@ -64,7 +64,7 @@ router.get('/:workspaceId', authenticate, async (req, res) => {
 
     // Check membership via Member collection
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const memberRecord = usernameLookup ? await Member.findOne({ workspaceId, username: usernameLookup }) : null;
+  const memberRecord = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
   // ownerId might be userId (ObjectId) or username (string) depending on historical data
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if (!memberRecord && !isOwner) {
@@ -93,7 +93,7 @@ router.get('/:workspaceId/members', authenticate, async (req, res) => {
   if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const memberRecord = usernameLookup ? await Member.findOne({ workspaceId, username: usernameLookup }) : null;
+  const memberRecord = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if (!memberRecord && !isOwner) return res.status(403).json({ error: 'Access denied' });
 
@@ -127,8 +127,8 @@ router.post('/:workspaceId/invite', authenticate, async (req, res) => {
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
     // Check if requester is owner or editor via Member collection
-    const usernameLookup = req.user && req.user.username ? req.user.username : null;
-    const requesterMember = usernameLookup ? await Member.findOne({ workspaceId, username: usernameLookup }) : null;
+  const usernameLookup = req.user && req.user.username ? req.user.username : null;
+  const requesterMember = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
     const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
     if ((!requesterMember || (requesterMember.role !== 'owner' && requesterMember.role !== 'editor')) && !isOwner) {
       return res.status(403).json({ error: 'Only owners and editors can invite users' });
@@ -211,11 +211,11 @@ router.put('/:workspaceId/members/:username', authenticate, async (req, res) => 
   if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const requesterMember = usernameLookup ? await Member.findOne({ workspaceId, username: usernameLookup }) : null;
+  const requesterMember = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if ((!requesterMember || requesterMember.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can update member roles' });
 
-  const memberToUpdate = await Member.findOne({ workspaceId, username });
+  const memberToUpdate = await Member.findOne({ workspaceId, username: new RegExp('^' + username + '$', 'i') });
   if (!memberToUpdate) return res.status(404).json({ error: 'Member not found' });
   if (memberToUpdate.role === 'owner') return res.status(400).json({ error: 'Cannot change owner role' });
 
@@ -248,15 +248,15 @@ router.delete('/:workspaceId/members/:username', authenticate, async (req, res) 
 
   // Check if requester is owner via Member collection
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const requesterMember = usernameLookup ? await Member.findOne({ workspaceId, username: usernameLookup }) : null;
+  const requesterMember = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if ((!requesterMember || requesterMember.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can remove members' });
 
-  const memberToRemove = await Member.findOne({ workspaceId, username });
+  const memberToRemove = await Member.findOne({ workspaceId, username: new RegExp('^' + username + '$', 'i') });
   if (!memberToRemove) return res.status(404).json({ error: 'Member not found' });
   if (memberToRemove.role === 'owner') return res.status(400).json({ error: 'Cannot remove workspace owner' });
 
-  await Member.deleteOne({ workspaceId, username });
+  await Member.deleteOne({ workspaceId, username: new RegExp('^' + username + '$', 'i') });
 
   console.log('✅ Member removed successfully');
   const emitToWorkspace = req.app.get('emitToWorkspace');
@@ -283,11 +283,11 @@ router.post('/:workspaceId/transfer-owner', authenticate, async (req, res) => {
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const requesterMember = usernameLookup ? await Member.findOne({ workspaceId, username: usernameLookup }) : null;
+  const requesterMember = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if ((!requesterMember || requesterMember.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can transfer ownership' });
 
-    const newOwnerMember = await Member.findOne({ workspaceId, username: toUsername });
+  const newOwnerMember = await Member.findOne({ workspaceId, username: new RegExp('^' + toUsername + '$', 'i') });
     if (!newOwnerMember) return res.status(404).json({ error: 'Target member not found' });
     if (newOwnerMember.role === 'owner') return res.status(400).json({ error: 'User is already the owner' });
 
@@ -345,13 +345,13 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
-  const member = usernameLookup ? await Member.findOne({ workspaceId, username: usernameLookup }) : null;
+  const member = usernameLookup ? await Member.findOne({ workspaceId, username: new RegExp('^' + usernameLookup + '$', 'i') }) : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if ((!member || member.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can update shared schemas' });
 
     // If updating an existing schema (replace), only owner can perform that operation.
     const existingSchemaIndex = workspace.sharedSchemas.findIndex(schema => schema.schemaId === schemaId);
-    if (existingSchemaIndex >= 0 && member.role !== 'owner') {
+    if (existingSchemaIndex >= 0 && !isOwner) {
       return res.status(403).json({ error: 'Only workspace owners can replace an existing shared schema' });
     }
 
