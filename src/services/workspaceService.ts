@@ -1,5 +1,6 @@
 // src/services/workspaceService.ts
 import { simpleWebSocketService } from './simpleWebSocketService';
+import { apiService } from './apiService';
 
 interface SharedSchema {
   schemaId: string;
@@ -134,20 +135,7 @@ class WorkspaceService {
 
   async getWorkspace(workspaceId: string): Promise<WorkspaceData | null> {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/workspaces/${workspaceId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || 'Failed to fetch workspace');
-      }
-
-      const workspace = await response.json();
+  const workspace = await apiService.get(`/workspaces/${workspaceId}`);
 
       return {
         ...workspace,
@@ -170,25 +158,11 @@ class WorkspaceService {
 
   async updateSharedSchema(workspaceId: string, schemaId: string, name: string, scripts: string): Promise<boolean> {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/workspaces/${workspaceId}/schemas`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          schemaId,
-          name,
-          scripts
-        })
+      await apiService.put(`/workspaces/${workspaceId}/schemas`, {
+        schemaId,
+        name,
+        scripts
       });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update shared schema');
-      }
 
       // Broadcast database update to other workspace members
       this.broadcastDatabaseUpdate(schemaId, 'schema_updated', {

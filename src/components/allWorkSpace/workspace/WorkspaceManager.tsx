@@ -75,31 +75,9 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
 
     try {
       console.log('📂 Loading workspace:', workspaceId);
-      const apiBase = (import.meta.env.VITE_API_BASE_URL || window.location.origin).replace(/\/+$/, '');
-      const res = await fetch(`${apiBase}/workspaces/${workspaceId}`, {
-        credentials: 'include'
-      });
+      // use apiService to ensure Authorization header is included from localStorage
+      const data = await apiService.get(`/workspaces/${workspaceId}`);
 
-      if (res.status === 401) {
-        setStatusError('unauthenticated');
-        setError('You must sign in to access collaboration');
-        return;
-      }
-
-      if (res.status === 403) {
-        setStatusError('access_denied');
-        setError('Access denied to this workspace');
-        return;
-      }
-
-      if (!res.ok) {
-        // other error (404, 500, etc.)
-        setStatusError('not_found');
-        setError('Workspace not found or unavailable');
-        return;
-      }
-
-      const data = await res.json();
       console.log('✅ Workspace loaded:', data);
       setWorkspace(data);
 
@@ -116,8 +94,24 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
           }
         }
       }
-    } catch (err) {
-      console.error('❌ Error loading workspace (network):', err);
+    } catch (err: any) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Map common auth/permission messages into UI states
+      if (msg.includes('401') || /unauth/i.test(msg) || /not authenticated/i.test(msg)) {
+        setStatusError('unauthenticated');
+        setError('You must sign in to access collaboration');
+        setIsLoading(false);
+        return;
+      }
+
+      if (msg.includes('403') || /access denied/i.test(msg) || /forbidden/i.test(msg)) {
+        setStatusError('access_denied');
+        setError('Access denied to this workspace');
+        setIsLoading(false);
+        return;
+      }
+
+      console.error('❌ Error loading workspace (api):', err);
       setStatusError('network');
       setError('Network error while loading workspace');
     } finally {

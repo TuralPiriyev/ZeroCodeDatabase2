@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 // subscription gating removed to always show collaboration
 import WorkspaceManager from "../workspace/WorkspaceManager";
 import { simpleWebSocketService } from "../../../services/simpleWebSocketService";
+import { apiService } from '../../../services/apiService';
 
 const RealTimeCollaboration: React.FC = () => {
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null);
@@ -12,36 +13,25 @@ const RealTimeCollaboration: React.FC = () => {
     // Resolve initial workspace id: try to list workspaces and pick the first one
     const resolveWorkspace = async () => {
       try {
-        const apiBase = (import.meta.env.VITE_API_BASE_URL || window.location.origin).replace(/\/+$/, '');
-        const res = await fetch(`${apiBase}/workspaces`, {
-          credentials: 'include'
-        });
-
-        if (res.status === 401) {
-          // not authenticated - ask user to login rather than fallback to default workspace
+        const list = await apiService.get('/workspaces');
+        if (Array.isArray(list) && list.length > 0) {
+          setCurrentWorkspaceId(list[0].id);
+          return;
+        }
+        setError('no_workspaces');
+      } catch (err: any) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('401') || /unauth/i.test(msg) || /not authenticated/i.test(msg)) {
           setError('unauthenticated');
           return;
         }
 
-        if (res.status === 403) {
-          // user has no workspaces or access denied
+        if (msg.includes('403') || /access denied/i.test(msg) || /forbidden/i.test(msg)) {
           setError('access_denied');
           return;
         }
 
-        if (res.ok) {
-          const list = await res.json();
-          if (Array.isArray(list) && list.length > 0) {
-            setCurrentWorkspaceId(list[0].id);
-            return;
-          }
-          // no workspaces available for this user
-          setError('no_workspaces');
-          return;
-        }
-      } catch (e) {
-        // ignore, will fallback
-        console.warn('Failed to resolve workspace list:', e);
+        console.warn('Failed to resolve workspace list:', err);
         setError('network');
       }
     };
