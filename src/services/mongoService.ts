@@ -1,5 +1,6 @@
 // MongoDB service for user validation and team collaboration
 import { WorkspaceInvitation, WorkspaceMember } from '../context/DatabaseContext';
+import { apiService } from './apiService';
 
 class MongoService {
   private baseUrl: string;
@@ -26,23 +27,8 @@ class MongoService {
 
   async validateUsername(username: string): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/users/validate`, {
-        method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify({ username })
-      });
-      if (!response.ok) {
-        if (response.status === 401) {
-          window.location.href = '/';
-          return false;
-        }
-        console.error(`Username validation failed: HTTP ${response.status}: ${response.statusText}`);
-        // Return true for development mode when server is not available
-        console.log('Returning true for development mode - server not available');
-        return true;
-      }
-      const data = await response.json();
-      return Boolean(data.exists);
+  const data = await apiService.post('/users/validate', { username });
+  return Boolean(data.exists);
     } catch (error) {
       console.error('Error validating username:', error);
       // Return true for development mode when network error occurs
@@ -53,23 +39,11 @@ class MongoService {
 
   async saveInvitation(invitation: WorkspaceInvitation): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/invitations`, {
-        method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify({
-          ...invitation,
-          createdAt: invitation.createdAt.toISOString(),
-          expiresAt: invitation.expiresAt.toISOString(),
-        })
+      await apiService.post('/invitations', {
+        ...invitation,
+        createdAt: invitation.createdAt.toISOString(),
+        expiresAt: invitation.expiresAt.toISOString(),
       });
-      if (!response.ok) {
-        if (response.status === 401) {
-          window.location.href = '/';
-          return false;
-        }
-  console.error(`Failed to save invitation: ${response.status}`);
-        return false;
-      }
       return true;
     } catch (error) {
       console.error('Error saving invitation:', error);
@@ -79,16 +53,8 @@ class MongoService {
 
   async updateInvitationStatus(invitationId: string, status: 'accepted' | 'expired'): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/invitations/${invitationId}`, {
-        method: 'PUT',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify({ status }),
-      });
-      if (!response.ok) {
-  console.error(`Failed to update invitation status: ${response.status}`);
-        return false;
-      }
-      return true;
+  await apiService.put(`/invitations/${invitationId}`, { status });
+  return true;
     } catch (error) {
       console.error('Error updating invitation status:', error);
       return false;
@@ -97,15 +63,7 @@ class MongoService {
 
   async getWorkspaceInvitations(workspaceId: string): Promise<WorkspaceInvitation[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/invitations?workspaceId=${encodeURIComponent(workspaceId)}`, {
-        method: 'GET',
-        headers: this.getAuthHeaders(),
-      });
-      if (!response.ok) {
-        console.error(`Failed to fetch invitations: ${response.status}`);
-        return [];
-      }
-      const data = await response.json();
+  const data = await apiService.get(`/invitations?workspaceId=${encodeURIComponent(workspaceId)}`);
       return data.map((inv: any) => ({
         ...inv,
         createdAt: new Date(inv.createdAt),
@@ -119,19 +77,11 @@ class MongoService {
 
   async saveWorkspaceMember(member: WorkspaceMember, workspaceId: string): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/members`, {
-        method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify({
-          ...member,
-          workspaceId,
-          joinedAt: member.joinedAt.toISOString(),
-        }),
+      await apiService.post('/members', {
+        ...member,
+        workspaceId,
+        joinedAt: member.joinedAt.toISOString(),
       });
-      if (!response.ok) {
-  console.error(`Failed to save workspace member: ${response.status}`);
-        return false;
-      }
       return true;
     } catch (error) {
       console.error('Error saving workspace member:', error);
@@ -141,15 +91,7 @@ class MongoService {
 
   async getWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/members?workspaceId=${encodeURIComponent(workspaceId)}`, {
-        method: 'GET',
-        headers: this.getAuthHeaders(),
-      });
-      if (!response.ok) {
-        console.error(`Failed to fetch workspace members: ${response.status}`);
-        return [];
-      }
-      const data = await response.json();
+  const data = await apiService.get(`/members?workspaceId=${encodeURIComponent(workspaceId)}`);
       return data.map((member: any) => ({
         ...member,
         joinedAt: new Date(member.joinedAt),
@@ -162,18 +104,10 @@ class MongoService {
 
   async updateWorkspace(workspaceId: string, data: any): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/workspaces/${encodeURIComponent(workspaceId)}`, {
-        method: 'PUT',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify({
-          ...data,
-          updatedAt: new Date().toISOString(),
-        }),
+      await apiService.put(`/workspaces/${encodeURIComponent(workspaceId)}`, {
+        ...data,
+        updatedAt: new Date().toISOString(),
       });
-      if (!response.ok) {
-  console.error(`Failed to update workspace: ${response.status}`);
-        return false;
-      }
       return true;
     } catch (error) {
       console.error('Error updating workspace:', error);
@@ -183,21 +117,7 @@ class MongoService {
 
   async getUserWorkspaces(username: string): Promise<any[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/workspaces?username=${encodeURIComponent(username)}`, {
-        method: 'GET',
-        headers: this.getAuthHeaders(),
-      });
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Redirect to login when unauthorized
-          window.location.href = '/';
-          return [];
-        }
-        console.error(`Failed to fetch user workspaces: ${response.status}`);
-        return [];
-      }
-
-      const workspaces = await response.json();
+  const workspaces = await apiService.get(`/workspaces?username=${encodeURIComponent(username)}`);
 
       // Convert workspaces.sharedSchemas into flat list of schema objects that match Portfolio shape
       const schemas: any[] = [];
@@ -230,30 +150,7 @@ class MongoService {
 
   async validateJoinCode(joinCode: string): Promise<{ valid: boolean; invitation?: WorkspaceInvitation; error?: string }> {
     try {
-      const response = await fetch(`${this.baseUrl}/invitations/validate`, {
-        method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify({ joinCode: joinCode.toUpperCase() }),
-      });
-      if (!response.ok) {
-        console.log('Join code validation failed, using fallback for development');
-        // Return mock success for development mode
-        return {
-          valid: true,
-          invitation: {
-            id: `mock_${Date.now()}`,
-            workspaceId: 'mock-workspace',
-            inviterUsername: 'current_user',
-            inviteeUsername: `user_${joinCode.slice(0, 4).toLowerCase()}`,
-            role: 'editor',
-            joinCode: joinCode.toUpperCase(),
-            createdAt: new Date(),
-            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-            status: 'pending'
-          }
-        };
-      }
-      const data = await response.json();
+  const data = await apiService.post('/invitations/validate', { joinCode: joinCode.toUpperCase() });
       if (data.invitation) {
         data.invitation.createdAt = new Date(data.invitation.createdAt);
         data.invitation.expiresAt = new Date(data.invitation.expiresAt);
@@ -282,17 +179,13 @@ class MongoService {
 
   async broadcastSchemaChange(schemaId: string, changeType: string, data: any): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/collaboration/broadcast`, {
-        method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify({
-          schemaId,
-          changeType,
-          data,
-          timestamp: new Date().toISOString(),
-        }),
+      await apiService.post('/collaboration/broadcast', {
+        schemaId,
+        changeType,
+        data,
+        timestamp: new Date().toISOString(),
       });
-      return response.ok;
+      return true;
     } catch (error) {
       console.error('Error broadcasting schema change:', error);
       return false;
@@ -303,15 +196,8 @@ class MongoService {
     try {
       const params = new URLSearchParams({ schemaId });
       if (since) params.append('since', since.toISOString());
-      const response = await fetch(`${this.baseUrl}/collaboration/updates?${params}`, {
-        method: 'GET',
-        headers: this.getAuthHeaders(),
-      });
-      if (!response.ok) {
-        console.error(`Failed to fetch realtime updates: ${response.status}`);
-        return [];
-      }
-      return await response.json();
+  const data = await apiService.get(`/collaboration/updates?${params}`);
+  return data;
     } catch (error) {
       console.error('Error fetching realtime updates:', error);
       return [];
