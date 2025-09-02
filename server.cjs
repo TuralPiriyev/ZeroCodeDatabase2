@@ -313,6 +313,24 @@ io.on('connection', (socket) => {
     delete socket.workspaceId;
   });
 
+  // Relay collaboration events emitted by clients to other members in the same workspace
+  const relayIfInWorkspace = (eventName, payload) => {
+    if (socket.workspaceId) {
+      console.log(`↔ Relaying ${eventName} from ${socket.id} to workspace ${socket.workspaceId}`);
+      // Broadcast to others in the room (exclude sender)
+      socket.to(`workspace_${socket.workspaceId}`).emit(eventName, payload);
+    } else {
+      console.log(`⚠️ Ignoring ${eventName} from ${socket.id} because socket not joined to a workspace`);
+    }
+  };
+
+  socket.on('cursor_update', (data) => relayIfInWorkspace('cursor_update', data));
+  socket.on('user_join', (data) => relayIfInWorkspace('user_joined', data));
+  socket.on('user_leave', (data) => relayIfInWorkspace('user_left', data));
+  socket.on('schema_change', (data) => relayIfInWorkspace('schema_change', data));
+  socket.on('user_selection', (data) => relayIfInWorkspace('user_selection', data));
+  socket.on('presence_update', (data) => relayIfInWorkspace('presence_update', data));
+
   socket.on('disconnect', () => {
     console.log('❌ Socket.IO client disconnected:', socket.id);
     

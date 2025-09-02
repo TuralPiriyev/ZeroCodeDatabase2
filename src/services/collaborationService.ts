@@ -122,6 +122,24 @@ export default class CollaborationService {
     simpleWebSocketService.on('db_update', dbUpdate);
     this._socketHandlers.set('db_update', dbUpdate);
 
+    // Direct cursor event (if server emits as 'cursor_update')
+    const cursorUpdate = (data: any) => {
+      console.log('📍 Cursor update event received (direct):', data);
+      // server may send either the cursor object directly or wrapped in { cursor }
+      const cursor = data && data.cursor ? data.cursor : data;
+      if (this.isValidCursorData(cursor)) this.emit('cursor_update', cursor);
+    };
+    simpleWebSocketService.on('cursor_update', cursorUpdate);
+    this._socketHandlers.set('cursor_update', cursorUpdate);
+
+    // Server can emit user_joined / user_left directly as well
+    const userJoined = (data: any) => { this.emit('user_joined', data); };
+    simpleWebSocketService.on('user_joined', userJoined);
+    this._socketHandlers.set('user_joined', userJoined);
+    const userLeft = (data: any) => { this.emit('user_left', data); };
+    simpleWebSocketService.on('user_left', userLeft);
+    this._socketHandlers.set('user_left', userLeft);
+
     // Fallback: listen to a generic "message" event if your service exposes it.
     const generic = (message: any) => {
       // If server sends structured messages like { type: 'cursor_update', data: {...} }
@@ -304,25 +322,7 @@ export default class CollaborationService {
     });
   }
 
-  private sendMessage(message: any) {
-    if (!this.isConnected || !simpleWebSocketService.isConnected()) {
-      console.warn('⚠️ WebSocket not connected, message not sent:', {
-        messageType: message?.type,
-        connectionId: this.connectionId,
-        isConnected: this.isConnected,
-        serviceConnected: simpleWebSocketService.isConnected()
-      });
-      return;
-    }
-
-    try {
-      // use event name = message.type
-      simpleWebSocketService.send(message.type, message);
-      console.log('📤 Message sent successfully:', message.type);
-    } catch (error: any) {
-      console.error('❌ Failed to send message:', error, message);
-    }
-  }
+  // (removed unused sendMessage helper to avoid TypeScript unused declaration errors)
 
   on(event: string, handler: Function) {
     if (!this.eventHandlers.has(event)) this.eventHandlers.set(event, []);

@@ -223,14 +223,19 @@ const DatabaseCanvasInner: React.FC<DatabaseCanvasProps> = ({
   // Send cursor updates when mouse moves over canvas
   const onMouseMove = useCallback(
     (event: React.MouseEvent) => {
-      // Cursor tracking hələlik deaktiv
-      // if (collaborationService.isConnected()) {
-      //   const rect = event.currentTarget.getBoundingClientRect();
-      //   const x = event.clientX - rect.left;
-      //   const y = event.clientY - rect.top;
-      //   
-      //   collaborationService.sendCursorUpdate({ x, y });
-      // }
+      // Send cursor updates when collaboration is connected
+      try {
+        if (collaborationService.isConnected && collaborationService.isConnectedState()) {
+          const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+          const x = event.clientX - rect.left;
+          const y = event.clientY - rect.top;
+          // Send normalized coordinates (client pixels relative to canvas)
+          collaborationService.sendCursorUpdate({ x, y });
+        }
+      } catch (e) {
+        // don't crash on any unexpected error
+        console.warn('Failed to send cursor update:', e);
+      }
     },
     []
   );
