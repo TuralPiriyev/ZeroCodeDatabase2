@@ -4,8 +4,12 @@ const Workspace = require('../models/Workspace.cjs');
 const User = require('../models/User.cjs');
 const Member = require('../models/Member.cjs');
 const { authenticate } = require('../middleware/auth.cjs');
+// Single module-level helper to escape strings used in RegExp constructors
+const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
 
 const router = express.Router();
+
+  // use module-level escapeForRegex
 
 // GET /api/workspaces - Get all workspaces for current user
 router.get('/', authenticate, async (req, res) => {
@@ -19,8 +23,7 @@ router.get('/', authenticate, async (req, res) => {
   if (req.user && req.user.username) identifiers.push(String(req.user.username));
   if (req.user && req.user.email) identifiers.push(String(req.user.email));
 
-  // Helper to escape user-provided strings for safe regex construction
-  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // use module-level escapeForRegex
 
   // Use case-insensitive matching for any identifier so invited users see their workspaces regardless of stored casing or identifier form
   let memberRecords = [];
@@ -80,7 +83,6 @@ router.get('/:workspaceId', authenticate, async (req, res) => {
     if (req.userId) identifiers.push(String(req.userId));
     if (req.user && req.user.username) identifiers.push(String(req.user.username));
     if (req.user && req.user.email) identifiers.push(String(req.user.email));
-    const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
     let memberRecord = null;
     if (identifiers.length > 0) {
       const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
@@ -117,7 +119,7 @@ router.get('/:workspaceId/members', authenticate, async (req, res) => {
   if (req.userId) identifiers.push(String(req.userId));
   if (req.user && req.user.username) identifiers.push(String(req.user.username));
   if (req.user && req.user.email) identifiers.push(String(req.user.email));
-  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  // use module-level escapeForRegex
   let memberRecord = null;
   if (identifiers.length > 0) {
     const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
@@ -161,7 +163,7 @@ router.post('/:workspaceId/invite', authenticate, async (req, res) => {
   if (req.userId) identifiers.push(String(req.userId));
   if (req.user && req.user.username) identifiers.push(String(req.user.username));
   if (req.user && req.user.email) identifiers.push(String(req.user.email));
-  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  // use module-level escapeForRegex
   let requesterMember = null;
   if (identifiers.length > 0) {
     const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
@@ -193,7 +195,7 @@ router.post('/:workspaceId/invite', authenticate, async (req, res) => {
     }
 
   // Check if user is already a member (case-insensitive)
-  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  // use module-level escapeForRegex
   const existingMember = await Member.findOne({ workspaceId, username: new RegExp('^' + escapeForRegex(username) + '$', 'i') });
   if (existingMember) return res.status(409).json({ error: 'User is already a member of this workspace' });
 
@@ -253,7 +255,7 @@ router.put('/:workspaceId/members/:username', authenticate, async (req, res) => 
   if (req.userId) identifiers.push(String(req.userId));
   if (req.user && req.user.username) identifiers.push(String(req.user.username));
   if (req.user && req.user.email) identifiers.push(String(req.user.email));
-  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  // use module-level escapeForRegex
   let requesterMember = null;
   if (identifiers.length > 0) {
     const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
@@ -299,7 +301,7 @@ router.delete('/:workspaceId/members/:username', authenticate, async (req, res) 
   if (req.userId) identifiers.push(String(req.userId));
   if (req.user && req.user.username) identifiers.push(String(req.user.username));
   if (req.user && req.user.email) identifiers.push(String(req.user.email));
-  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  // use module-level escapeForRegex
   let requesterMember = null;
   if (identifiers.length > 0) {
     const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
@@ -343,7 +345,7 @@ router.post('/:workspaceId/transfer-owner', authenticate, async (req, res) => {
   if (req.userId) identifiers.push(String(req.userId));
   if (req.user && req.user.username) identifiers.push(String(req.user.username));
   if (req.user && req.user.email) identifiers.push(String(req.user.email));
-  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  // use module-level escapeForRegex
   let requesterMember = null;
   if (identifiers.length > 0) {
     const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
@@ -414,7 +416,7 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
   if (req.userId) identifiers.push(String(req.userId));
   if (req.user && req.user.username) identifiers.push(String(req.user.username));
   if (req.user && req.user.email) identifiers.push(String(req.user.email));
-  const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
+  // use module-level escapeForRegex
   let member = null;
   if (identifiers.length > 0) {
     const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
