@@ -284,6 +284,8 @@ app.post('/api/logout', (req, res) => {
 
 // Socket.IO workspace management
 const workspaceRooms = new Map();
+// Map username -> Set of socket ids for notifying specific users
+const userSockets = new Map();
 
 io.on('connection', (socket) => {
   console.log('🔌 Socket.IO client connected:', socket.id);
@@ -299,6 +301,23 @@ io.on('connection', (socket) => {
     workspaceRooms.get(workspaceId).add(socket.id);
     
     socket.workspaceId = workspaceId;
+  });
+
+  // Register user presence when client emits user_join (contains username)
+  socket.on('user_join', (data) => {
+    try {
+      const username = data && (data.username || data.userId);
+      if (username) {
+        socket.username = String(username);
+        if (!userSockets.has(socket.username)) userSockets.set(socket.username, new Set());
+        userSockets.get(socket.username).add(socket.id);
+        console.log('🔔 Registered socket for user:', socket.username, socket.id);
+      }
+      // Continue to relay join to others in workspace
+      relayIfInWorkspace('user_joined', data);
+    } catch (e) {
+      console.warn('Failed to register user socket on user_join', e);
+    }
   });
 
   socket.on('leave_workspace', (workspaceId) => {
@@ -338,6 +357,14 @@ io.on('connection', (socket) => {
     if (socket.workspaceId && workspaceRooms.has(socket.workspaceId)) {
       workspaceRooms.get(socket.workspaceId).delete(socket.id);
     }
+    // Clean up userSockets mapping
+    if (socket.username) {
+      const set = userSockets.get(socket.username);
+      if (set) {
+        set.delete(socket.id);
+        if (set.size === 0) userSockets.delete(socket.username);
+      }
+    }
   });
 });
 
@@ -349,6 +376,8 @@ const emitToWorkspace = (workspaceId, event, data) => {
 
 // Make emitToWorkspace available to routes
 app.set('emitToWorkspace', emitToWorkspace);
+// Make userSockets available to routes for direct notifications
+app.set('userSockets', userSockets);
 
 // SMTP configuration
 const transporter = nodemailer.createTransport({

@@ -253,6 +253,28 @@ router.post('/:workspaceId/invite', authenticate, async (req, res) => {
       });
     }
 
+    // Also notify the invited user directly if they are online via socket (userSockets map in server)
+    try {
+      const server = req.app.get('serverInstance') || null; // optional
+      // access io and server-side userSockets map if available
+      const io = req.app.get('io');
+      // server.cjs keeps a module-level userSockets map; expose via app if available
+      const userSockets = req.app.get('userSockets');
+      if (userSockets && userSockets.has(username)) {
+        const sockets = userSockets.get(username);
+        sockets.forEach(sid => {
+          try {
+            io.to(sid).emit('workspace_invite', { workspaceId, workspaceName: workspace.name, invitedBy: req.user && req.user.username ? req.user.username : null });
+          } catch (e) {
+            // ignore
+          }
+        });
+      }
+    } catch (e) {
+      // non-fatal
+      console.warn('Failed to emit direct workspace invite via sockets:', e);
+    }
+
     // Return updated members array
     const members = await Member.find({ workspaceId }).select('-_id username role joinedAt').lean();
     res.json({
