@@ -100,7 +100,19 @@ class SimpleWebSocketService {
 
         // forward selected server events to our local handlers
         ['member_added', 'member_removed', 'member_updated', 'db_update', 'message', 'cursor_update', 'user_joined', 'user_left', 'schema_change', 'user_selection', 'presence_update'].forEach(evt => {
-          this.socket?.on(evt, (data: any) => this.emit(evt, data));
+          this.socket?.on(evt, (data: any) => {
+            // emit named event for modern listeners
+            this.emit(evt, data);
+            // also emit a legacy 'message' wrapper so older services that subscribe to
+            // 'message' (with { type, data }) receive the event in a compatible shape
+            try {
+              if (evt !== 'message') {
+                this.emit('message', { type: evt, data });
+              }
+            } catch (e) {
+              console.warn('Failed to forward event as message wrapper', evt, e);
+            }
+          });
         });
 
         // in case server uses 'message' - already included above, but keep for clarity
