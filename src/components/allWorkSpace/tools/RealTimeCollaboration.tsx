@@ -50,8 +50,21 @@ const RealTimeCollaboration: React.FC = () => {
 
     resolveWorkspace();
 
+    // subscribe to direct workspace invites (so online invitees see new workspace immediately)
+    const inviteHandler = async (data: any) => {
+      console.log('📩 Received workspace_invite:', data);
+      try {
+        const list = await apiService.get('/workspaces');
+        if (Array.isArray(list)) setWorkspaces(list as WorkspaceSummary[]);
+      } catch (e) {
+        console.warn('Failed to refresh workspaces after invite', e);
+      }
+    };
+    simpleWebSocketService.on('workspace_invite', inviteHandler);
+
     return () => {
       console.log('⚡ Disconnecting WebSocket on unmount');
+      simpleWebSocketService.off('workspace_invite', inviteHandler);
       simpleWebSocketService.disconnect();
     };
   }, []);

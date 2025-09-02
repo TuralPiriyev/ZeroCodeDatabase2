@@ -77,10 +77,10 @@ class MongoService {
 
   async saveWorkspaceMember(member: WorkspaceMember, workspaceId: string): Promise<boolean> {
     try {
-      await apiService.post('/members', {
-        ...member,
-        workspaceId,
-        joinedAt: member.joinedAt.toISOString(),
+      // Use workspace-scoped invite endpoint to create member records
+      await apiService.post(`/workspaces/${encodeURIComponent(workspaceId)}/invite`, {
+        username: member.username,
+        role: member.role,
       });
       return true;
     } catch (error) {
@@ -91,7 +91,7 @@ class MongoService {
 
   async getWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
     try {
-  const data = await apiService.get(`/members?workspaceId=${encodeURIComponent(workspaceId)}`);
+  const data = await apiService.get(`/workspaces/${encodeURIComponent(workspaceId)}/members`);
       return data.map((member: any) => ({
         ...member,
         joinedAt: new Date(member.joinedAt),
