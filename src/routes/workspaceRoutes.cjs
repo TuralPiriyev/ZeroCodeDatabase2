@@ -43,6 +43,7 @@ router.get('/', authenticate, async (req, res) => {
     // Attach current user's role for each workspace
     const workspaceIds = workspaces.map(w => w.id);
     const membersForWorkspaces = await Member.find({ workspaceId: { $in: workspaceIds } }).lean();
+    const usernameLookup = req.user && req.user.username ? req.user.username : null;
 
     const workspacesOut = workspaces.map(w => {
       const obj = w.toObject();
@@ -89,6 +90,7 @@ router.get('/:workspaceId', authenticate, async (req, res) => {
       memberRecord = await Member.findOne({ workspaceId, $or: or });
     }
   // ownerId might be userId (ObjectId) or username (string) depending on historical data
+  const usernameLookup = req.user && req.user.username ? req.user.username : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if (!memberRecord && !isOwner) {
       console.log('❌ Access denied for workspace:', workspaceId);
