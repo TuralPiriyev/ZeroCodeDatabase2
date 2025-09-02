@@ -16,7 +16,16 @@ router.get('/', authenticate, async (req, res) => {
   try {
     console.log('📂 Fetching workspaces for user:', req.userId);
   // Find workspaces where user is owner OR has a member record
-  const ownerWorkspaces = await Workspace.find({ ownerId: req.userId, isActive: true }).sort({ updatedAt: -1 });
+  const mongoose = require('mongoose');
+  let ownerWorkspaces = [];
+  try {
+    // Search for ownerId stored either as string or as an ObjectId
+    const orOwner = [{ ownerId: req.userId }, { ownerId: mongoose.Types.ObjectId(String(req.userId)) }];
+    ownerWorkspaces = await Workspace.find({ $or: orOwner, isActive: true }).sort({ updatedAt: -1 });
+  } catch (e) {
+    // Fallback: simple string match
+    ownerWorkspaces = await Workspace.find({ ownerId: req.userId, isActive: true }).sort({ updatedAt: -1 });
+  }
   // Build a set of possible identifiers for the current user: userId, username, email
   const identifiers = [];
   if (req.userId) identifiers.push(String(req.userId));
@@ -26,10 +35,12 @@ router.get('/', authenticate, async (req, res) => {
   // use module-level escapeForRegex
 
   // Use case-insensitive matching for any identifier so invited users see their workspaces regardless of stored casing or identifier form
-  let memberRecords = [];
+    let memberRecords = [];
   if (identifiers.length > 0) {
     const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
     memberRecords = await Member.find({ $or: or }).distinct('workspaceId');
+    // Normalize to strings so we can compare against Workspace.id (which is a string)
+    memberRecords = (memberRecords || []).map(r => String(r));
   }
   const memberWorkspaces = await Workspace.find({ id: { $in: memberRecords }, isActive: true }).sort({ updatedAt: -1 });
 
@@ -41,8 +52,13 @@ router.get('/', authenticate, async (req, res) => {
 
     console.log('✅ Found workspaces:', workspaces.length);
     // Attach current user's role for each workspace
-    const workspaceIds = workspaces.map(w => w.id);
-    const membersForWorkspaces = await Member.find({ workspaceId: { $in: workspaceIds } }).lean();
+  const workspaceIds = workspaces.map(w => String(w.id));
+  // build an $in array that contains both string ids and ObjectId forms (for migrated records)
+  const workspaceIdObjs = workspaceIds.filter(id => /^[0-9a-fA-F]{24}$/.test(id)).map(id => mongoose.Types.ObjectId(id));
+  const workspaceInValues = [...workspaceIds, ...workspaceIdObjs];
+  let membersForWorkspaces = await Member.find({ workspaceId: { $in: workspaceInValues } }).lean();
+  // normalize member.workspaceId to string for easier comparisons
+  membersForWorkspaces = (membersForWorkspaces || []).map(m => ({ ...m, workspaceId: String(m.workspaceId) }));
     const usernameLookup = req.user && req.user.username ? req.user.username : null;
 
     const workspacesOut = workspaces.map(w => {
@@ -87,7 +103,20 @@ router.get('/:workspaceId', authenticate, async (req, res) => {
     let memberRecord = null;
     if (identifiers.length > 0) {
       const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
+      // First try matching workspaceId as a string
       memberRecord = await Member.findOne({ workspaceId, $or: or });
+      // If not found, try matching workspaceId as an ObjectId (for migrated records)
+      if (!memberRecord) {
+        try {
+          const mongoose = require('mongoose');
+          if (/^[0-9a-fA-F]{24}$/.test(String(workspaceId))) {
+            const objId = mongoose.Types.ObjectId(String(workspaceId));
+            memberRecord = await Member.findOne({ workspaceId: objId, $or: or });
+          }
+        } catch (e) {
+          // ignore invalid ObjectId or lookup errors
+        }
+      }
     }
   // ownerId might be userId (ObjectId) or username (string) depending on historical data
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
