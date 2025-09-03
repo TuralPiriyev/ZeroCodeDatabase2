@@ -35,6 +35,13 @@ const WorkspaceSchema = new Schema({
       default: Date.now 
     }
   }],
+  // Denormalized members list for quick access and UI (kept in sync with Member collection)
+  members: [{
+    username: { type: String },
+    userId: { type: String },
+    role: { type: String, enum: ['owner','editor','viewer'] },
+    joinedAt: { type: Date }
+  }],
   isActive: { 
     type: Boolean, 
     default: true 

@@ -34,11 +34,15 @@ router.get('/', authenticate, async (req, res) => {
 
   // use module-level escapeForRegex
 
-  // Use case-insensitive matching for any identifier so invited users see their workspaces regardless of stored casing or identifier form
+  // Use case-insensitive matching for username/email and exact match for userId so invited users see their workspaces
     let memberRecords = [];
   if (identifiers.length > 0) {
-    const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
-    memberRecords = await Member.find({ $or: or }).distinct('workspaceId');
+    // Build $or clauses that include userId exact matches and username regex matches
+    const orClauses = identifiers.flatMap(id => [
+      { userId: id },
+      { username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }
+    ]);
+    memberRecords = await Member.find({ $or: orClauses }).distinct('workspaceId');
     // Normalize to strings so we can compare against Workspace.id (which is a string)
     memberRecords = (memberRecords || []).map(r => String(r));
   }
@@ -102,16 +106,20 @@ router.get('/:workspaceId', authenticate, async (req, res) => {
     if (req.user && req.user.email) identifiers.push(String(req.user.email));
     let memberRecord = null;
     if (identifiers.length > 0) {
-      const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
+      // Build $or clauses for userId and username regex
+      const orClauses = identifiers.flatMap(id => [
+        { userId: id },
+        { username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }
+      ]);
       // First try matching workspaceId as a string
-      memberRecord = await Member.findOne({ workspaceId, $or: or });
+      memberRecord = await Member.findOne({ workspaceId, $or: orClauses });
       // If not found, try matching workspaceId as an ObjectId (for migrated records)
       if (!memberRecord) {
         try {
           const mongoose = require('mongoose');
           if (/^[0-9a-fA-F]{24}$/.test(String(workspaceId))) {
             const objId = mongoose.Types.ObjectId(String(workspaceId));
-            memberRecord = await Member.findOne({ workspaceId: objId, $or: or });
+            memberRecord = await Member.findOne({ workspaceId: objId, $or: orClauses });
           }
         } catch (e) {
           // ignore invalid ObjectId or lookup errors
@@ -153,8 +161,8 @@ router.get('/:workspaceId/members', authenticate, async (req, res) => {
   // use module-level escapeForRegex
   let memberRecord = null;
   if (identifiers.length > 0) {
-    const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
-    memberRecord = await Member.findOne({ workspaceId, $or: or });
+    const orClauses = identifiers.flatMap(id => [ { userId: id }, { username: new RegExp('^' + escapeForRegex(id) + '$', 'i') } ]);
+    memberRecord = await Member.findOne({ workspaceId, $or: orClauses });
   }
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
@@ -244,6 +252,16 @@ router.post('/:workspaceId/invite', authenticate, async (req, res) => {
     await newMember.save();
     console.log('✅ User successfully added to workspace:', newMember.username);
 
+    // Update denormalized members in Workspace document as well
+    try {
+      workspace.members = workspace.members || [];
+      workspace.members.push({ username: newMember.username, userId: newMember.userId, role: newMember.role, joinedAt: newMember.joinedAt });
+      workspace.updatedAt = new Date();
+      await workspace.save();
+    } catch (e) {
+      console.warn('Failed to update workspace.members on invite:', e);
+    }
+
     // Emit real-time event to workspace members
     const io = req.app.get('io');
     const emitToWorkspace = req.app.get('emitToWorkspace');
@@ -332,6 +350,18 @@ router.put('/:workspaceId/members/:username', authenticate, async (req, res) => 
   const emitToWorkspace = req.app.get('emitToWorkspace');
   if (emitToWorkspace) emitToWorkspace(workspaceId, 'member_updated', { username: memberToUpdate.username, role: memberToUpdate.role });
 
+  // Update denormalized workspace.members
+  try {
+    const ws = await Workspace.findOne({ id: workspaceId });
+    if (ws && ws.members) {
+      ws.members = ws.members.map(m => (m.username && m.username.toLowerCase() === memberToUpdate.username.toLowerCase()) ? { username: m.username, userId: m.userId, role: memberToUpdate.role, joinedAt: m.joinedAt } : m);
+      ws.updatedAt = new Date();
+      await ws.save();
+    }
+  } catch (e) {
+    console.warn('Failed to update workspace.members after role change:', e);
+  }
+
   const members = await Member.find({ workspaceId }).select('-_id username role joinedAt').lean();
   res.json({ success: true, message: `${username} role updated to ${role}`, members });
 
@@ -375,6 +405,18 @@ router.delete('/:workspaceId/members/:username', authenticate, async (req, res) 
   console.log('✅ Member removed successfully');
   const emitToWorkspace = req.app.get('emitToWorkspace');
   if (emitToWorkspace) emitToWorkspace(workspaceId, 'member_removed', { username });
+
+  // Also remove from workspace.members denormalized list
+  try {
+    const ws = await Workspace.findOne({ id: workspaceId });
+    if (ws && ws.members) {
+      ws.members = ws.members.filter(m => !(m.username && m.username.toLowerCase() === username.toLowerCase()));
+      ws.updatedAt = new Date();
+      await ws.save();
+    }
+  } catch (e) {
+    console.warn('Failed to remove member from workspace.members:', e);
+  }
 
   const members = await Member.find({ workspaceId }).select('-_id username role joinedAt').lean();
   res.json({ success: true, message: `${username} has been removed from the workspace`, members });
@@ -609,6 +651,14 @@ router.post('/', authenticate, async (req, res) => {
     updatedAt: new Date()
   });
   await ownerMember.save();
+  // Also add owner into denormalized workspace.members array
+  try {
+    workspace.members = workspace.members || [];
+    workspace.members.push({ username: ownerMember.username, userId: ownerMember.userId, role: ownerMember.role, joinedAt: ownerMember.joinedAt });
+    await workspace.save();
+  } catch (e) {
+    console.warn('Failed to update workspace.members for owner', e);
+  }
 
   console.log('✅ Workspace created successfully:', workspace.id);
   const out = workspace.toObject();
