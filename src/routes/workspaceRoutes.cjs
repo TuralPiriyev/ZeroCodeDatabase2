@@ -138,6 +138,16 @@ router.get('/:workspaceId', authenticate, async (req, res) => {
     const members = await Member.find({ workspaceId }).select('-_id username role joinedAt').lean();
     const out = workspace.toObject();
     out.members = members || [];
+
+    // If client requested a specific shared schema via query param, include it directly
+    const requestedSchemaId = req.query && req.query.schemaId ? String(req.query.schemaId) : null;
+    if (requestedSchemaId && out.sharedSchemas && Array.isArray(out.sharedSchemas)) {
+      const found = out.sharedSchemas.find(s => s.schemaId === requestedSchemaId);
+      if (found) {
+        out.selectedSchema = { schemaId: found.schemaId, name: found.name, scripts: found.scripts, lastModified: found.lastModified };
+      }
+    }
+
     console.log('✅ Workspace found and accessible:', workspace.name);
     res.json(out);
   } catch (error) {
@@ -624,9 +634,9 @@ router.put('/:workspaceId/schemas', authenticate, async (req, res) => {
 // POST /api/workspaces - Create new workspace
 router.post('/', authenticate, async (req, res) => {
   try {
-    const { id, name } = req.body;
+    const { id, name, sharedSchema } = req.body;
     
-    console.log('🏗️ Creating workspace:', { id, name });
+    console.log('🏗️ Creating workspace:', { id, name, hasSharedSchema: !!sharedSchema });
 
     if (!id || !name) {
       return res.status(400).json({ error: 'Workspace ID and name are required' });
@@ -637,7 +647,18 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(409).json({ error: 'Workspace with this ID already exists' });
     }
 
-  const workspace = new Workspace({ id, name, ownerId: req.userId, sharedSchemas: [] });
+    // Prepare initial sharedSchemas array if a sharedSchema was provided during creation
+    const initialSharedSchemas = [];
+    if (sharedSchema && sharedSchema.schemaId && sharedSchema.name && sharedSchema.scripts) {
+      initialSharedSchemas.push({
+        schemaId: String(sharedSchema.schemaId),
+        name: String(sharedSchema.name),
+        scripts: String(sharedSchema.scripts),
+        lastModified: new Date()
+      });
+    }
+
+  const workspace = new Workspace({ id, name, ownerId: req.userId, sharedSchemas: initialSharedSchemas });
   await workspace.save();
 
   // Create owner member record

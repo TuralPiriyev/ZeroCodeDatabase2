@@ -38,7 +38,6 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'members' | 'invite' | 'schemas'>('members');
   const [isConnected, setIsConnected] = useState(false);
 
@@ -93,22 +92,37 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
 
     try {
       console.log('📂 Loading workspace:', workspaceId);
+      // Determine if a schemaId was requested via URL query param
+      const params = new URLSearchParams(window.location.search);
+      const requestedSchemaId = params.get('schemaId');
       // use apiService to ensure Authorization header is included from localStorage
-      const data = await apiService.get(`/workspaces/${workspaceId}`);
+      const url = requestedSchemaId ? `/workspaces/${workspaceId}?schemaId=${encodeURIComponent(requestedSchemaId)}` : `/workspaces/${workspaceId}`;
+      const data = await apiService.get(url);
 
       console.log('✅ Workspace loaded:', data);
       setWorkspace(data);
 
-      // Load first shared schema if available (only if owner or editor)
-      if (data.sharedSchemas && data.sharedSchemas.length > 0) {
-        const firstSchema = data.sharedSchemas[0];
-        if (firstSchema.scripts) {
-          try {
-            const schemaData = JSON.parse(firstSchema.scripts);
-            importSchema(schemaData);
-            console.log('✅ Shared schema loaded:', firstSchema.name);
-          } catch (parseError) {
-            console.error('❌ Failed to parse shared schema:', parseError);
+      // If server returned a selectedSchema (due to ?schemaId), load it first
+      if (data.selectedSchema && data.selectedSchema.scripts) {
+        try {
+          const schemaData = JSON.parse(data.selectedSchema.scripts);
+          importSchema(schemaData);
+          console.log('✅ Selected shared schema loaded:', data.selectedSchema.name);
+        } catch (parseError) {
+          console.error('❌ Failed to parse selected shared schema:', parseError);
+        }
+      } else {
+        // Fallback: Load first shared schema if available (only if owner or editor)
+        if (data.sharedSchemas && data.sharedSchemas.length > 0) {
+          const firstSchema = data.sharedSchemas[0];
+          if (firstSchema.scripts) {
+            try {
+              const schemaData = JSON.parse(firstSchema.scripts);
+              importSchema(schemaData);
+              console.log('✅ Shared schema loaded:', firstSchema.name);
+            } catch (parseError) {
+              console.error('❌ Failed to parse shared schema:', parseError);
+            }
           }
         }
       }
@@ -116,22 +130,19 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
       const msg = err instanceof Error ? err.message : String(err);
       // Map common auth/permission messages into UI states
       if (msg.includes('401') || /unauth/i.test(msg) || /not authenticated/i.test(msg)) {
-        setStatusError('unauthenticated');
         setError('You must sign in to access collaboration');
         setIsLoading(false);
         return;
       }
 
       if (msg.includes('403') || /access denied/i.test(msg) || /forbidden/i.test(msg)) {
-        setStatusError('access_denied');
         setError('Access denied to this workspace');
         setIsLoading(false);
         return;
       }
 
-      console.error('❌ Error loading workspace (api):', err);
-      setStatusError('network');
-      setError('Network error while loading workspace');
+  console.error('❌ Error loading workspace (api):', err);
+  setError('Network error while loading workspace');
     } finally {
       setIsLoading(false);
     }
