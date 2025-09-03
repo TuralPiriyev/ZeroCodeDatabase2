@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import initSqlJs from 'sql.js';
 import { v4 as uuidv4 } from 'uuid';
 import {mongoService} from '../services/mongoService'
+import { collaborationService } from '../services/collaborationService';
 
 export interface Column {
   id: string;
@@ -330,6 +331,76 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       }
     }
   }, [sqlEngine]);
+  
+
+  // --- Real-time collaboration: receive remote schema changes and apply locally ---
+  useEffect(() => {
+    const handler = (message: any) => {
+      try {
+        if (!message) return;
+        // message may be either { changeType, data, userId, username, timestamp } or { type: 'schema_change', data... }
+        const changeType = message.changeType || message.type || message.change?.type || null;
+        const payload = message.data || message.change || message.payload || null;
+        if (!changeType || !payload) return;
+
+        // Apply changes depending on changeType
+        switch (changeType) {
+          case 'table_created':
+            setCurrentSchema(prev => ({ ...prev, tables: [...prev.tables, payload], updatedAt: new Date() }));
+            break;
+          case 'table_updated':
+            setCurrentSchema(prev => ({ ...prev, tables: prev.tables.map(t => t.id === payload.id ? { ...t, ...payload.updates } : t), updatedAt: new Date() }));
+            break;
+          case 'table_deleted':
+            setCurrentSchema(prev => ({ ...prev, tables: prev.tables.filter(t => t.id !== payload.id), relationships: prev.relationships.filter(r => r.sourceTableId !== payload.id && r.targetTableId !== payload.id), updatedAt: new Date() }));
+            break;
+          case 'relationship_added':
+            setCurrentSchema(prev => ({ ...prev, relationships: [...prev.relationships, payload], updatedAt: new Date() }));
+            break;
+          case 'relationship_removed':
+            setCurrentSchema(prev => ({ ...prev, relationships: prev.relationships.filter(r => r.id !== payload.id), updatedAt: new Date() }));
+            break;
+          case 'index_added':
+            setCurrentSchema(prev => ({ ...prev, indexes: [...prev.indexes, payload], updatedAt: new Date() }));
+            break;
+          case 'index_removed':
+            setCurrentSchema(prev => ({ ...prev, indexes: prev.indexes.filter(i => i.id !== payload.id), updatedAt: new Date() }));
+            break;
+          case 'constraint_added':
+            setCurrentSchema(prev => ({ ...prev, constraints: [...prev.constraints, payload], updatedAt: new Date() }));
+            break;
+          case 'constraint_removed':
+            setCurrentSchema(prev => ({ ...prev, constraints: prev.constraints.filter(c => c.id !== payload.id), updatedAt: new Date() }));
+            break;
+          default:
+            // Unknown change type - ignore
+            break;
+        }
+      } catch (e) {
+        console.warn('Failed to apply remote schema_change message', e);
+      }
+    };
+
+    collaborationService.on('schema_change', handler);
+    // also listen to generic 'message' events forwarded by simpleWebSocketService
+    collaborationService.on('db_update', handler);
+
+    return () => {
+      try { collaborationService.off('schema_change', handler); } catch (e) {}
+      try { collaborationService.off('db_update', handler); } catch (e) {}
+    };
+  }, []);
+
+  // Helper to emit local schema changes to other collaborators
+  const emitSchemaChange = useCallback((changeType: string, data: any) => {
+    try {
+      if (!currentSchema || !currentSchema.isShared) return;
+      if (!collaborationService || !collaborationService.isConnectedState()) return;
+      collaborationService.sendSchemaChange({ type: changeType as any, data: data as any, userId: '', timestamp: new Date() });
+    } catch (e) {
+      console.warn('Failed to emit schema change', e);
+    }
+  }, [currentSchema]);
 
   // --- Local snapshot persistence for collaboration ---
   const snapshotTimer = useRef<number | null>(null);
@@ -716,6 +787,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         console.error('Failed to create table in SQL engine:', error);
       }
     }
+  try { emitSchemaChange('table_created', newTable); } catch (e) {}
   }, [sqlEngine]);
 
   const removeTable = useCallback((tableId: string) => {
@@ -742,7 +814,12 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         console.error('Failed to drop table in SQL engine:', error);
       }
     }
+  try { emitSchemaChange('table_deleted', { id: tableId }); } catch (e) {}
   }, [currentSchema.tables, sqlEngine]);
+  // emit on removeTable
+  useEffect(() => {
+    // placeholder
+  }, [removeTable]);
 
   const updateTable = useCallback((tableId: string, updates: Partial<Table>) => {
     setCurrentSchema(prev => ({
@@ -752,7 +829,12 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       ),
       updatedAt: new Date(),
     }));
+  try { emitSchemaChange('table_updated', { id: tableId, updates }); } catch (e) {}
   }, []);
+  // emit on updateTable
+  useEffect(() => {
+    // placeholder
+  }, [updateTable]);
 
   const duplicateTable = useCallback((tableId: string) => {
     const originalTable = currentSchema.tables.find(t => t.id === tableId);
@@ -793,7 +875,12 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         console.error('Failed to create duplicated table in SQL engine:', error);
       }
     }
+  try { emitSchemaChange('table_created', newTable); } catch (e) {}
   }, [currentSchema.tables, sqlEngine]);
+  // emit on duplicateTable
+  useEffect(() => {
+    // placeholder
+  }, [duplicateTable]);
 
   const alterTable = useCallback((tableId: string, operation: 'ADD_COLUMN' | 'DROP_COLUMN' | 'MODIFY_COLUMN', data: any) => {
     const table = currentSchema.tables.find(t => t.id === tableId);
@@ -846,6 +933,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         console.error('Failed to alter table in SQL engine:', error);
       }
     }
+  try { emitSchemaChange('table_updated', { id: tableId, updates: { columns: newColumns } }); } catch (e) {}
   }, [currentSchema.tables, sqlEngine]);
 
   const insertRow = useCallback((tableId: string, data: Record<string, any>) => {
