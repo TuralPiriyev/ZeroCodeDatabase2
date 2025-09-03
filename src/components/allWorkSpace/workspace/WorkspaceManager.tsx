@@ -46,6 +46,14 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
     initializeWorkspace();
 
     return () => {
+      try {
+        const currentUser = getCurrentUser();
+        if (currentUser) {
+          socketService.send('user_leave', { userId: currentUser.id, username: currentUser.username, workspaceId });
+        }
+      } catch (e) {
+        // ignore
+      }
       socketService.leaveWorkspace();
     };
   }, [workspaceId]);
@@ -58,6 +66,16 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
 
   // Join workspace room (will store and emit after connect if socket not ready)
   socketService.joinWorkspace(workspaceId);
+
+  // Notify server of the user's presence so server can map sockets to usernames/userIds
+  try {
+    const currentUser = getCurrentUser();
+    if (currentUser) {
+      socketService.send('user_join', { userId: currentUser.id, username: currentUser.username, role: currentUser.role, workspaceId });
+    }
+  } catch (e) {
+    // ignore
+  }
 
   // Load workspace data (with fallback if the requested workspace doesn't exist)
   await loadWorkspace();
