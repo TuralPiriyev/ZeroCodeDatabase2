@@ -964,7 +964,8 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         console.error('Failed to insert row in SQL engine:', error);
       }
     }
-  }, [currentSchema.tables, sqlEngine]);
+    try { emitSchemaChange('row_inserted', { tableId, data }); } catch (e) {}
+    }, [currentSchema.tables, sqlEngine]);
 
   const updateRow = useCallback((tableId: string, rowIndex: number, data: Record<string, any>) => {
     const table = currentSchema.tables.find(t => t.id === tableId);
@@ -980,6 +981,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       ),
       updatedAt: new Date(),
     }));
+    try { emitSchemaChange('row_updated', { tableId, rowIndex, data: newData[rowIndex] }); } catch (e) {}
   }, [currentSchema.tables]);
 
   const deleteRow = useCallback((tableId: string, rowIndex: number) => {
@@ -997,6 +999,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       ),
       updatedAt: new Date(),
     }));
+  try { emitSchemaChange('row_deleted', { tableId, rowIndex }); } catch (e) {}
   }, [currentSchema.tables]);
 
   const truncateTable = useCallback((tableId: string) => {
@@ -1019,6 +1022,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         console.error('Failed to truncate table in SQL engine:', error);
       }
     }
+  try { emitSchemaChange('table_truncated', { tableId }); } catch (e) {}
   }, [currentSchema.tables, sqlEngine]);
 
   const addRelationship = useCallback((relationship: Omit<Relationship, 'id'>) => {
@@ -1115,6 +1119,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       indexes: [...prev.indexes, newIndex],
       updatedAt: new Date(),
     }));
+  try { emitSchemaChange('index_added', newIndex); } catch (e) {}
   }, []);
 
   const removeIndex = useCallback((indexId: string) => {
@@ -1123,6 +1128,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       indexes: prev.indexes.filter(idx => idx.id !== indexId),
       updatedAt: new Date(),
     }));
+  try { emitSchemaChange('index_removed', { id: indexId }); } catch (e) {}
   }, []);
 
   const addConstraint = useCallback((constraint: Omit<Constraint, 'id'>) => {
@@ -1136,6 +1142,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       constraints: [...prev.constraints, newConstraint],
       updatedAt: new Date(),
     }));
+  try { emitSchemaChange('constraint_added', newConstraint); } catch (e) {}
   }, []);
 
   const removeConstraint = useCallback((constraintId: string) => {
@@ -1144,6 +1151,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       constraints: prev.constraints.filter(con => con.id !== constraintId),
       updatedAt: new Date(),
     }));
+  try { emitSchemaChange('constraint_removed', { id: constraintId }); } catch (e) {}
   }, []);
 
   const addUser = useCallback((user: Omit<User, 'id'>) => {
@@ -1250,6 +1258,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       savedQueries: [...prev.savedQueries, newQuery],
       updatedAt: new Date(),
     }));
+  try { emitSchemaChange('saved_query_added', newQuery); } catch (e) {}
   }, []);
 
   const removeQuery = useCallback((queryId: string) => {
@@ -1258,6 +1267,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       savedQueries: prev.savedQueries.filter(q => q.id !== queryId),
       updatedAt: new Date(),
     }));
+  try { emitSchemaChange('saved_query_removed', { id: queryId }); } catch (e) {}
   }, []);
 
   const exportSchema = useCallback((format: string) => {
