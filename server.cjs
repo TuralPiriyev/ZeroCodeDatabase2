@@ -41,7 +41,10 @@ const server = http.createServer(app);
 const io = socketIo(server, {
   path: '/ws/portfolio-updates',   // frontend ilə eyni olmalıdır
   cors: {
+    // Always allow localhost during development for local clients/tests,
+    // plus the configured FRONTEND_ORIGIN and production host.
     origin: [
+      'http://localhost:5173',
       process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
       'https://zerocodedb.online'
     ],
@@ -503,7 +506,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '127.0.0.1', () => {
   console.log(`🚀 Server started successfully!`);
   console.log(`📡 Port: ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
@@ -511,6 +514,27 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`📧 SMTP: ${process.env.SMTP_HOST || 'Not configured'}`);
   console.log(`🔌 Socket.IO: Enabled`);
   console.log(`🌍 CORS Origins: ${FRONTEND_ORIGIN}`);
+  try {
+    const addr = server.address();
+    console.log('🔍 Server address:', addr);
+  } catch (e) {
+    console.warn('🔍 Could not read server.address()', e && e.message ? e.message : e);
+  }
+});
+
+// Listen for server errors (for example, EACCES or EADDRINUSE)
+server.on('error', (err) => {
+  console.error('❌ Server error event:', err && err.message ? err.message : err);
+  if (err && err.code) console.error('❌ Server error code:', err.code);
+});
+
+// Global exception handlers to help debug crashes in CI or developer machines
+process.on('uncaughtException', (err) => {
+  console.error('💥 Uncaught Exception:', err && err.stack ? err.stack : err);
+  // keep process alive for debugging; in production you may want to exit
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 module.exports = { app, server, io };
