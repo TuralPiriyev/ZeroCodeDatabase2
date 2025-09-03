@@ -189,7 +189,7 @@ router.post('/:workspaceId/invite', authenticate, async (req, res) => {
     const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
-    // Check if requester is owner or editor via Member collection
+  // Check if requester is owner or editor via Member collection
   const identifiers = [];
   if (req.userId) identifiers.push(String(req.userId));
   if (req.user && req.user.username) identifiers.push(String(req.user.username));
@@ -200,40 +200,42 @@ router.post('/:workspaceId/invite', authenticate, async (req, res) => {
     const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
     requesterMember = await Member.findOne({ workspaceId, $or: or });
   }
-    const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
+  const usernameLookup = req.user && req.user.username ? req.user.username : null;
+  const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
     if ((!requesterMember || (requesterMember.role !== 'owner' && requesterMember.role !== 'editor')) && !isOwner) {
       return res.status(403).json({ error: 'Only owners and editors can invite users' });
     }
 
-    // Validate that username exists in Users collection
-    let userExists = false;
+    // Validate that username exists in Users collection and fetch invited user if available
+    let invitedUser = null;
     try {
       if (mongoose.connection.readyState === 1) {
-        const user = await User.findOne({ username });
-        userExists = !!user;
-        console.log('👤 User validation result:', { username, exists: userExists });
+        invitedUser = await User.findOne({ username });
+        console.log('👤 User validation result:', { username, exists: !!invitedUser });
+        if (!invitedUser) return res.status(404).json({ error: 'User not found' });
       } else {
         console.log('📡 MongoDB not connected, allowing invitation for development');
-        userExists = true;
       }
     } catch (error) {
       console.warn('⚠️ User validation failed, continuing for development:', error);
-      userExists = true;
     }
 
-    if (!userExists && mongoose.connection.readyState === 1) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-  // Check if user is already a member (case-insensitive)
+  // Check if user is already a member (case-insensitive) — try matching by userId or username
   // use module-level escapeForRegex
-  const existingMember = await Member.findOne({ workspaceId, username: new RegExp('^' + escapeForRegex(username) + '$', 'i') });
+  let existingMember = null;
+  const invitedUserId = invitedUser ? String(invitedUser._id) : null;
+  if (invitedUserId) {
+    existingMember = await Member.findOne({ workspaceId, $or: [{ userId: invitedUserId }, { username: new RegExp('^' + escapeForRegex(username) + '$', 'i') }] });
+  } else {
+    existingMember = await Member.findOne({ workspaceId, username: new RegExp('^' + escapeForRegex(username) + '$', 'i') });
+  }
   if (existingMember) return res.status(409).json({ error: 'User is already a member of this workspace' });
 
     // Add member record
     const newMember = new Member({
       workspaceId,
       id: require('uuid').v4(),
+      userId: invitedUser ? String(invitedUser._id) : undefined,
       username,
       role,
       joinedAt: new Date(),
@@ -597,7 +599,15 @@ router.post('/', authenticate, async (req, res) => {
   await workspace.save();
 
   // Create owner member record
-  const ownerMember = new Member({ workspaceId: id, id: require('uuid').v4(), username: req.user.username || 'current_user', role: 'owner', joinedAt: new Date(), updatedAt: new Date() });
+  const ownerMember = new Member({
+    workspaceId: id,
+    id: require('uuid').v4(),
+    userId: req.userId ? String(req.userId) : undefined,
+    username: req.user && req.user.username ? req.user.username : String(req.userId || 'current_user'),
+    role: 'owner',
+    joinedAt: new Date(),
+    updatedAt: new Date()
+  });
   await ownerMember.save();
 
   console.log('✅ Workspace created successfully:', workspace.id);
