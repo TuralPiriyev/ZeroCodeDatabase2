@@ -198,6 +198,7 @@ interface DatabaseProviderProps {
 
 export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) => {
   const [sqlEngine, setSqlEngine] = useState<any>(null);
+  const sqlJsModeRef = useRef<{ current?: boolean }>({});
   const [currentSchema, setCurrentSchema] = useState<Schema>({
     id: uuidv4(),
     name: 'Untitled Schema',
@@ -318,10 +319,28 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
             if (sourceColumn && targetColumn) {
               const fkSQL = `ALTER TABLE ${sourceTable.name} ADD CONSTRAINT fk_${sourceTable.name}_${sourceColumn.name} FOREIGN KEY (${sourceColumn.name}) REFERENCES ${targetTable.name}(${targetColumn.name})`;
               try {
-                sqlEngine.run(fkSQL);
-                console.log('Created foreign key constraint:', fkSQL);
+                // SQL.js (SQLite) does not support adding constraints after table creation.
+                // Skip executing ALTER ... ADD CONSTRAINT when running in sql.js mode to avoid noisy errors.
+                if ((sqlJsModeRef as any).current) {
+                  console.log('Skipping FK SQL execution in sql.js mode:', fkSQL);
+                } else {
+                  sqlEngine.run(fkSQL);
+                  console.log('Created foreign key constraint:', fkSQL);
+                }
               } catch (error) {
-                console.error('Failed to create foreign key constraint:', error);
+                          // SQLite/sql.js does not support ALTER TABLE ... ADD CONSTRAINT after creation.
+                          // These errors are expected when running in the browser SQL engine; log at debug level to avoid noise.
+                          try {
+                            const anyErr: any = error;
+                            const msg = (anyErr && anyErr.message) ? anyErr.message : String(anyErr);
+                            if (msg.includes('CONSTRAINT') || msg.toLowerCase().includes('syntax error')) {
+                              console.debug('FK creation skipped (sql.js limitation):', msg);
+                            } else {
+                              console.error('Failed to create foreign key constraint:', error);
+                            }
+                          } catch (e) {
+                            console.error('Failed to create foreign key constraint:', error);
+                          }
               }
             }
           }
@@ -331,6 +350,30 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       }
     }
   }, [sqlEngine]);
+
+  // Listen specifically for db_update messages carrying a persisted schema
+  useEffect(() => {
+    const dbUpdateHandler = (message: any) => {
+      try {
+        if (!message) return;
+        // message may be { schemaId, name, schema, timestamp }
+        if (message.schema) {
+          try {
+            const parsed = typeof message.schema === 'string' ? JSON.parse(message.schema) : message.schema;
+            console.log('📥 db_update received: importing schema', message.schemaId || parsed.id || '(unknown)');
+            importSchema(parsed);
+          } catch (e) {
+            console.warn('Failed to parse db_update schema payload', e);
+          }
+        }
+      } catch (e) {
+        console.warn('Error handling db_update message', e);
+      }
+    };
+
+    collaborationService.on('db_update', dbUpdateHandler);
+    return () => { try { collaborationService.off('db_update', dbUpdateHandler); } catch (e) {} };
+  }, [importSchema]);
   
 
   // --- Real-time collaboration: receive remote schema changes and apply locally ---
@@ -1082,8 +1125,12 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       try {
         // Create the foreign key constraint
         const fkSQL = `ALTER TABLE ${sourceTable.name} ADD CONSTRAINT fk_${sourceTable.name}_${sourceColumn.name} FOREIGN KEY (${sourceColumn.name}) REFERENCES ${targetTable.name}(${targetColumn.name})`;
-        sqlEngine.run(fkSQL);
-        console.log('Created foreign key constraint:', fkSQL);
+        if ((sqlJsModeRef as any).current) {
+          console.log('Skipping FK SQL execution in sql.js mode for new relationship:', fkSQL);
+        } else {
+          sqlEngine.run(fkSQL);
+          console.log('Created foreign key constraint:', fkSQL);
+        }
       } catch (error) {
         console.error('Failed to create foreign key constraint in SQL engine:', error);
       }
@@ -1108,8 +1155,12 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         
         if (sourceTable && sourceColumn) {
           const dropFkSQL = `ALTER TABLE ${sourceTable.name} DROP CONSTRAINT fk_${sourceTable.name}_${sourceColumn.name}`;
-          sqlEngine.run(dropFkSQL);
-          console.log('Dropped foreign key constraint:', dropFkSQL);
+          if ((sqlJsModeRef as any).current) {
+            console.log('Skipping DROP CONSTRAINT in sql.js mode:', dropFkSQL);
+          } else {
+            sqlEngine.run(dropFkSQL);
+            console.log('Dropped foreign key constraint:', dropFkSQL);
+          }
         }
       } catch (error) {
         console.error('Failed to drop foreign key constraint from SQL engine:', error);
