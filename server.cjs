@@ -359,13 +359,20 @@ io.on('connection', (socket) => {
               ws.sharedSchemas = ws.sharedSchemas || [];
               const idx = ws.sharedSchemas.findIndex(s => s.schemaId === String(data.schemaId));
               const schemaEntry = { schemaId: String(data.schemaId), name: data.name || 'Shared Schema', scripts: String(data.schema), lastModified: new Date() };
-              if (idx >= 0) ws.sharedSchemas[idx] = schemaEntry;
-              else ws.sharedSchemas.push(schemaEntry);
-              ws.updatedAt = new Date();
-              await ws.save();
+                if (idx >= 0) {
+                  console.log('🔁 Updating existing sharedSchema in workspace', workspaceId, 'schemaId:', data.schemaId);
+                  ws.sharedSchemas[idx] = schemaEntry;
+                } else {
+                  console.log('➕ Adding new sharedSchema to workspace', workspaceId, 'schemaId:', data.schemaId);
+                  ws.sharedSchemas.push(schemaEntry);
+                }
+                ws.updatedAt = new Date();
+                console.log('💾 Saving workspace sharedSchemas to MongoDB...', { workspaceId, schemaId: data.schemaId });
+                await ws.save();
+                console.log('✅ Workspace saved. Emitting db_update to workspace members.');
 
-              // Emit db_update to workspace members so clients auto-load new script
-              emitToWorkspace(workspaceId, 'db_update', { schemaId: data.schemaId, name: schemaEntry.name, schema: schemaEntry.scripts, timestamp: new Date().toISOString() });
+                // Emit db_update to workspace members so clients auto-load new script
+                emitToWorkspace(workspaceId, 'db_update', { schemaId: data.schemaId, name: schemaEntry.name, schema: schemaEntry.scripts, timestamp: new Date().toISOString() });
             }
           } catch (e) {
             console.warn('Failed to persist shared schema from schema_change:', e);
