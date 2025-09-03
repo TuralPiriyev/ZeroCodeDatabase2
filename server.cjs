@@ -346,7 +346,38 @@ io.on('connection', (socket) => {
   socket.on('cursor_update', (data) => relayIfInWorkspace('cursor_update', data));
   socket.on('user_join', (data) => relayIfInWorkspace('user_joined', data));
   socket.on('user_leave', (data) => relayIfInWorkspace('user_left', data));
-  socket.on('schema_change', (data) => relayIfInWorkspace('schema_change', data));
+  // Persist schema_change payloads that include a full schema to the Workspace.sharedSchemas
+  socket.on('schema_change', async (data) => {
+    try {
+      // If payload contains a full schema and schemaId, persist into DB
+      if (data && data.schemaId && data.schema) {
+        const workspaceId = socket.workspaceId || data.workspaceId;
+        if (workspaceId) {
+          try {
+            const ws = await Workspace.findOne({ id: workspaceId });
+            if (ws) {
+              ws.sharedSchemas = ws.sharedSchemas || [];
+              const idx = ws.sharedSchemas.findIndex(s => s.schemaId === String(data.schemaId));
+              const schemaEntry = { schemaId: String(data.schemaId), name: data.name || 'Shared Schema', scripts: String(data.schema), lastModified: new Date() };
+              if (idx >= 0) ws.sharedSchemas[idx] = schemaEntry;
+              else ws.sharedSchemas.push(schemaEntry);
+              ws.updatedAt = new Date();
+              await ws.save();
+
+              // Emit db_update to workspace members so clients auto-load new script
+              emitToWorkspace(workspaceId, 'db_update', { schemaId: data.schemaId, name: schemaEntry.name, schema: schemaEntry.scripts, timestamp: new Date().toISOString() });
+            }
+          } catch (e) {
+            console.warn('Failed to persist shared schema from schema_change:', e);
+          }
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    // Also relay the schema_change event to other clients as before
+    relayIfInWorkspace('schema_change', data);
+  });
   socket.on('user_selection', (data) => relayIfInWorkspace('user_selection', data));
   socket.on('presence_update', (data) => relayIfInWorkspace('presence_update', data));
 
