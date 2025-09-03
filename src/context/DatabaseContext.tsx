@@ -397,15 +397,15 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       if (!currentSchema || !currentSchema.isShared) return;
       if (!collaborationService || !collaborationService.isConnectedState()) return;
       // Include the full current schema so server can persist the authoritative version
-      const payload = {
+      // Build a SchemaChange-like object for collaborationService
+      const change: any = {
         type: changeType,
-        data: data,
+        data,
         schemaId: currentSchema.id,
         schema: JSON.stringify(currentSchema),
-        userId: '',
-        timestamp: new Date().toISOString()
       };
-  collaborationService.sendSchemaChange(payload as any);
+      // collaborationService will attach userId/timestamp
+      collaborationService.sendSchemaChange(change as any);
     } catch (e) {
       console.warn('Failed to emit schema change', e);
     }

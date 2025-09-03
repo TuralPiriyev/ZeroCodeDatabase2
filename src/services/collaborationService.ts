@@ -17,10 +17,13 @@ export interface CursorPosition {
 }
 
 export interface SchemaChange {
-  type: 'table_created' | 'table_updated' | 'table_deleted' | 'relationship_added' | 'relationship_removed';
+  type: 'table_created' | 'table_updated' | 'table_deleted' | 'relationship_added' | 'relationship_removed' | 'row_inserted' | 'row_updated' | 'row_deleted' | 'table_truncated' | 'index_added' | 'index_removed' | 'constraint_added' | 'constraint_removed' | 'saved_query_added' | 'saved_query_removed';
   data: any;
-  userId: string;
-  timestamp: Date;
+  userId?: string;
+  timestamp?: Date | string;
+  // Optional full-schema payload so clients can ask server to persist authoritative copy
+  schemaId?: string;
+  schema?: string;
 }
 
 export default class CollaborationService {
@@ -294,13 +297,17 @@ export default class CollaborationService {
 
   sendSchemaChange(change: SchemaChange) {
     if (!this.currentUser) return;
-    simpleWebSocketService.send('schema_change', {
+    // Forward additional optional fields (schemaId/schema) if provided so server can persist
+    const payload: any = {
       changeType: change.type,
       data: change.data,
       userId: this.currentUser.id,
       username: this.currentUser.username,
       timestamp: new Date().toISOString()
-    });
+    };
+    if (change.schemaId) payload.schemaId = change.schemaId;
+    if (change.schema) payload.schema = change.schema;
+    simpleWebSocketService.send('schema_change', payload);
   }
 
   sendUserSelection(selection: { tableId?: string; columnId?: string }) {
