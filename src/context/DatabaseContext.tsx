@@ -1454,9 +1454,25 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       }
       return [...prev, currentSchema];
     });
-    
+
+    // If this is a shared schema, notify collaboration service with the full canonical
+    // schema so the server can perform an authoritative upsert and broadcast updates.
+    try {
+      if (currentSchema && currentSchema.isShared) {
+        const serialized = JSON.stringify(currentSchema);
+        try {
+          collaborationService.sendSchemaChange({ type: 'schema_saved', data: {}, schemaId: currentSchema.id, schema: serialized } as any);
+        } catch (e) {
+          // Best-effort fallback: emit a db_update event so any listeners can import the persisted schema
+          try { (collaborationService as any).emit && (collaborationService as any).emit('db_update', { schemaId: currentSchema.id, schema: serialized }); } catch (e2) {}
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to notify collaboration service about schema save', e);
+    }
+
   },
- 
+
   [currentSchema]);
 
   const value: DatabaseContextType = {
