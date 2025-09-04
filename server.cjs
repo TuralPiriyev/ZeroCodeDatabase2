@@ -350,14 +350,23 @@ io.on('connection', (socket) => {
     }
   };
 
+  // Compatibility: also accept 'join-room' event name
+  socket.on('join-room', (workspaceId) => {
+    try {
+      console.log(`🏠 (join-room) Socket ${socket.id} joining workspace: ${workspaceId}`);
+
   socket.on('cursor_update', (data) => relayIfInWorkspace('cursor_update', data));
   socket.on('user_join', (data) => relayIfInWorkspace('user_joined', data));
   socket.on('user_leave', (data) => relayIfInWorkspace('user_left', data));
+    } catch (e) {
+      console.warn('join-room handler error', e);
+    }
+  });
   // Persist schema_change payloads that include a full schema to the Workspace.sharedSchemas
   socket.on('schema_change', async (data) => {
     try {
       // If payload contains a full schema and schemaId, schedule persistence (debounced)
-      if (data && data.schemaId && data.schema) {
+        if (data && data.schemaId && data.schema) {
         const workspaceId = socket.workspaceId || data.workspaceId;
         const schemaId = String(data.schemaId);
         if (workspaceId) {
@@ -371,26 +380,45 @@ io.on('connection', (socket) => {
               clearTimeout(wsMap.get(schemaId).timer);
             }
 
-            // Store latest payload
+            // Store latest payload and schedule upsert
             wsMap.set(schemaId, {
               timer: setTimeout(async () => {
                 try {
-                  // Load workspace and upsert the shared schema
-                  const w = await Workspace.findOne({ id: workspaceId });
-                  if (!w) return;
-                  w.sharedSchemas = w.sharedSchemas || [];
-                  const idx = w.sharedSchemas.findIndex(s => s.schemaId === schemaId);
-                  const schemaEntry = { schemaId, name: data.name || 'Shared Schema', scripts: String(data.schema), lastModified: new Date() };
-                  if (idx >= 0) w.sharedSchemas[idx] = schemaEntry; else w.sharedSchemas.push(schemaEntry);
-                  w.updatedAt = new Date();
-                  console.log('💾 Debounced save: persisting shared schema for workspace', workspaceId, 'schemaId:', schemaId);
-                  await w.save();
-                  console.log('✅ Debounced workspace saved. Emitting db_update to workspace members.');
-                  emitToWorkspace(workspaceId, 'db_update', { schemaId, name: schemaEntry.name, schema: schemaEntry.scripts, timestamp: new Date().toISOString() });
+                  const SharedSchema = require('./src/models/SharedSchema.cjs');
+                  const update = {
+                    $set: {
+                      workspaceId,
+                      schemaId,
+                      name: data.name || 'Shared Schema',
+                      scripts: String(data.schema),
+                      lastModified: new Date(),
+                      shared: true
+                    },
+                    $inc: { version: 1 }
+                  };
+                  const opts = { upsert: true, new: true };
+                  const saved = await SharedSchema.findOneAndUpdate({ workspaceId, schemaId }, update, opts).exec();
+
+                  // Update denormalized Workspace.sharedSchemas if present
+                  try {
+                    const w = await Workspace.findOne({ id: workspaceId });
+                    if (w) {
+                      w.sharedSchemas = w.sharedSchemas || [];
+                      const idx = w.sharedSchemas.findIndex(s => s.schemaId === schemaId);
+                      const schemaEntry = { schemaId, name: saved.name, scripts: saved.scripts, lastModified: saved.lastModified };
+                      if (idx >= 0) w.sharedSchemas[idx] = schemaEntry; else w.sharedSchemas.push(schemaEntry);
+                      w.updatedAt = new Date();
+                      await w.save();
+                    }
+                  } catch (e) {
+                    console.warn('Failed to update denormalized workspace.sharedSchemas from socket debounce:', e);
+                  }
+
+                  console.log('✅ Debounced shared schema persisted (upsert) for', workspaceId, 'schemaId:', schemaId);
+                  emitToWorkspace(workspaceId, 'workspace-updated', { workspaceId, schemaId, version: saved.version, lastModified: saved.lastModified });
                 } catch (err) {
-                  console.warn('Failed to persist debounced shared schema:', err);
+                  console.warn('Failed to persist debounced shared schema (upsert):', err);
                 } finally {
-                  // cleanup pending entry
                   const m = pendingSchemaWrites.get(workspaceId);
                   if (m) m.delete(schemaId);
                 }

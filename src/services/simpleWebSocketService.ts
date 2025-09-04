@@ -99,7 +99,7 @@ class SimpleWebSocketService {
         });
 
         // forward selected server events to our local handlers
-  ['member_added', 'member_removed', 'member_updated', 'db_update', 'message', 'cursor_update', 'user_joined', 'user_left', 'schema_change', 'user_selection', 'presence_update', 'workspace_invite'].forEach(evt => {
+  ['member_added', 'member_removed', 'member_updated', 'db_update', 'message', 'cursor_update', 'user_joined', 'user_left', 'schema_change', 'user_selection', 'presence_update', 'workspace_invite', 'workspace-updated'].forEach(evt => {
           this.socket?.on(evt, (data: any) => {
             // emit named event for modern listeners
             this.emit(evt, data);
@@ -151,7 +151,9 @@ class SimpleWebSocketService {
     console.log('🏠 Joining workspace:', workspaceId);
     this.currentWorkspaceId = workspaceId;
     try {
-      this.socket.emit('join_workspace', workspaceId);
+  // Emit both legacy and new event names for compatibility
+  try { this.socket.emit('join-room', { workspaceId }); } catch (e) {}
+  try { this.socket.emit('join_workspace', workspaceId); } catch (e) {}
     } catch (e) {
       console.error('Failed to emit join_workspace:', e);
     }
