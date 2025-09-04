@@ -74,17 +74,48 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
 
   const replaceWithCurrent = async () => {
     if (!currentSchema) return setError('No current schema loaded to share'); setIsLoading(true);
-    try { const payload = { schemaId: (currentSchema as any).id || `${Date.now()}`, name: (currentSchema as any).name || 'Shared Schema', scripts: JSON.stringify(currentSchema) }; await apiService.post(`/workspaces/${workspaceId}/schemas`, payload); await loadSharedSchemas(); } catch (err) { console.error('Failed to replace schema:', err); setError(err instanceof Error ? err.message : 'Failed to replace schema'); } finally { setIsLoading(false); }
+    try {
+      // Always use authoritative schemaId when replacing; prefer selectedSharedSchemaId if present
+      const canonicalId = selectedSharedSchemaId || (currentSchema as any).id || `${Date.now()}`;
+      const payload = { schemaId: canonicalId, name: (currentSchema as any).name || 'Shared Schema', scripts: JSON.stringify(currentSchema) };
+      // Do not send createNew flag for shared schemas
+      await apiService.post(`/workspaces/${workspaceId}/schemas`, payload);
+      await loadSharedSchemas();
+    } catch (err) {
+      console.error('Failed to replace schema:', err);
+      setError(err instanceof Error ? err.message : 'Failed to replace schema');
+    } finally { setIsLoading(false); }
   };
 
   const shareFromPortfolio = async () => {
     if (!selectedPortfolioId) return setError('Please select a portfolio schema to share'); const p = portfolios.find(pt => (pt as any)._id === selectedPortfolioId); if (!p) return setError('Selected portfolio not found'); setIsLoading(true);
-    try { const payload = { schemaId: (p as any)._id, name: (p as any).name || `Portfolio ${(p as any)._id}`, scripts: (p as any).scripts }; if (selectedSharedSchemaId) (payload as any).schemaId = selectedSharedSchemaId; await apiService.post(`/workspaces/${workspaceId}/schemas`, payload); setSelectedPortfolioId(null); setSelectedSharedSchemaId(null); await loadSharedSchemas(); } catch (err) { console.error('Failed to share from portfolio:', err); setError(err instanceof Error ? err.message : 'Failed to share from portfolio'); } finally { setIsLoading(false); }
+    try {
+      // Use the portfolio id as canonical schemaId so we upsert instead of insert
+      const canonicalId = selectedSharedSchemaId || (p as any)._id;
+      const payload = { schemaId: canonicalId, name: (p as any).name || `Portfolio ${(p as any)._id}`, scripts: (p as any).scripts };
+      await apiService.post(`/workspaces/${workspaceId}/schemas`, payload);
+      setSelectedPortfolioId(null);
+      setSelectedSharedSchemaId(null);
+      await loadSharedSchemas();
+    } catch (err) {
+      console.error('Failed to share from portfolio:', err);
+      setError(err instanceof Error ? err.message : 'Failed to share from portfolio');
+    } finally { setIsLoading(false); }
   };
 
   const createSharedSchema = async () => {
     if (!currentSchema) return setError('No current schema loaded to create'); if (!newSchemaName) return setError('Please provide a name'); setIsCreating(true); setError(null);
-    try { const payload = { schemaId: (currentSchema as any).id || `${Date.now()}`, name: newSchemaName, scripts: JSON.stringify(currentSchema) }; await apiService.post(`/workspaces/${workspaceId}/schemas`, payload); setNewSchemaName('Shared Schema'); await loadSharedSchemas(); } catch (err) { console.error('Failed to create shared schema:', err); setError(err instanceof Error ? err.message : 'Failed to create shared schema'); } finally { setIsCreating(false); }
+    try {
+      // Creating a new shared schema: generate a canonical id but do not set createNew
+      const canonicalId = (currentSchema as any).id || `${Date.now()}`;
+      const payload = { schemaId: canonicalId, name: newSchemaName, scripts: JSON.stringify(currentSchema) };
+      await apiService.post(`/workspaces/${workspaceId}/schemas`, payload);
+      setNewSchemaName('Shared Schema');
+      await loadSharedSchemas();
+    } catch (err) {
+      console.error('Failed to create shared schema:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create shared schema');
+    } finally { setIsCreating(false); }
   };
 
   return (
