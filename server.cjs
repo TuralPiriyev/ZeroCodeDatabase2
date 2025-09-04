@@ -41,10 +41,7 @@ const server = http.createServer(app);
 const io = socketIo(server, {
   path: '/ws/portfolio-updates',   // frontend ilə eyni olmalıdır
   cors: {
-    // Always allow localhost during development for local clients/tests,
-    // plus the configured FRONTEND_ORIGIN and production host.
     origin: [
-      'http://localhost:5173',
       process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
       'https://zerocodedb.online'
     ],
@@ -290,6 +287,11 @@ const workspaceRooms = new Map();
 // Map username -> Set of socket ids for notifying specific users
 const userSockets = new Map();
 
+// In-memory debounce queue for schema persistence to avoid write storms
+// Structure: Map<workspaceId, Map<schemaId, { timer: NodeJS.Timeout, payload: { name, scripts } }>>
+const pendingSchemaWrites = new Map();
+const SCHEMA_PERSIST_DEBOUNCE_MS = 1000; // wait 1s of quiet before persisting
+
 io.on('connection', (socket) => {
   console.log('🔌 Socket.IO client connected:', socket.id);
 
@@ -352,33 +354,49 @@ io.on('connection', (socket) => {
   // Persist schema_change payloads that include a full schema to the Workspace.sharedSchemas
   socket.on('schema_change', async (data) => {
     try {
-      // If payload contains a full schema and schemaId, persist into DB
+      // If payload contains a full schema and schemaId, schedule persistence (debounced)
       if (data && data.schemaId && data.schema) {
         const workspaceId = socket.workspaceId || data.workspaceId;
+        const schemaId = String(data.schemaId);
         if (workspaceId) {
           try {
-            const ws = await Workspace.findOne({ id: workspaceId });
-            if (ws) {
-              ws.sharedSchemas = ws.sharedSchemas || [];
-              const idx = ws.sharedSchemas.findIndex(s => s.schemaId === String(data.schemaId));
-              const schemaEntry = { schemaId: String(data.schemaId), name: data.name || 'Shared Schema', scripts: String(data.schema), lastModified: new Date() };
-                if (idx >= 0) {
-                  console.log('🔁 Updating existing sharedSchema in workspace', workspaceId, 'schemaId:', data.schemaId);
-                  ws.sharedSchemas[idx] = schemaEntry;
-                } else {
-                  console.log('➕ Adding new sharedSchema to workspace', workspaceId, 'schemaId:', data.schemaId);
-                  ws.sharedSchemas.push(schemaEntry);
-                }
-                ws.updatedAt = new Date();
-                console.log('💾 Saving workspace sharedSchemas to MongoDB...', { workspaceId, schemaId: data.schemaId });
-                await ws.save();
-                console.log('✅ Workspace saved. Emitting db_update to workspace members.');
+            // Ensure maps exist
+            if (!pendingSchemaWrites.has(workspaceId)) pendingSchemaWrites.set(workspaceId, new Map());
+            const wsMap = pendingSchemaWrites.get(workspaceId);
 
-                // Emit db_update to workspace members so clients auto-load new script
-                emitToWorkspace(workspaceId, 'db_update', { schemaId: data.schemaId, name: schemaEntry.name, schema: schemaEntry.scripts, timestamp: new Date().toISOString() });
+            // Clear existing timer if present
+            if (wsMap.has(schemaId) && wsMap.get(schemaId).timer) {
+              clearTimeout(wsMap.get(schemaId).timer);
             }
+
+            // Store latest payload
+            wsMap.set(schemaId, {
+              timer: setTimeout(async () => {
+                try {
+                  // Load workspace and upsert the shared schema
+                  const w = await Workspace.findOne({ id: workspaceId });
+                  if (!w) return;
+                  w.sharedSchemas = w.sharedSchemas || [];
+                  const idx = w.sharedSchemas.findIndex(s => s.schemaId === schemaId);
+                  const schemaEntry = { schemaId, name: data.name || 'Shared Schema', scripts: String(data.schema), lastModified: new Date() };
+                  if (idx >= 0) w.sharedSchemas[idx] = schemaEntry; else w.sharedSchemas.push(schemaEntry);
+                  w.updatedAt = new Date();
+                  console.log('💾 Debounced save: persisting shared schema for workspace', workspaceId, 'schemaId:', schemaId);
+                  await w.save();
+                  console.log('✅ Debounced workspace saved. Emitting db_update to workspace members.');
+                  emitToWorkspace(workspaceId, 'db_update', { schemaId, name: schemaEntry.name, schema: schemaEntry.scripts, timestamp: new Date().toISOString() });
+                } catch (err) {
+                  console.warn('Failed to persist debounced shared schema:', err);
+                } finally {
+                  // cleanup pending entry
+                  const m = pendingSchemaWrites.get(workspaceId);
+                  if (m) m.delete(schemaId);
+                }
+              }, SCHEMA_PERSIST_DEBOUNCE_MS),
+              payload: { name: data.name || 'Shared Schema', scripts: String(data.schema) }
+            });
           } catch (e) {
-            console.warn('Failed to persist shared schema from schema_change:', e);
+            console.warn('Failed to schedule shared schema persistence from schema_change:', e);
           }
         }
       }
