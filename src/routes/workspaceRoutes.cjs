@@ -543,6 +543,11 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
       return res.status(403).json({ error: 'Only workspace owners can replace an existing shared schema' });
     }
 
+    // Reject client attempts to "create new" a shared schema by supplying a different workspaceId
+    if (req.body.createNew) {
+      return res.status(400).json({ error: 'Cannot create new workspace document for a shared schema. Use the canonical workspaceId' });
+    }
+
     // Prepare upsert update: set fields, increment version atomically
     const update = {
       $set: {
@@ -557,6 +562,13 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
     };
     const opts = { upsert: true, new: true };
     const saved = await SharedSchemaModel.findOneAndUpdate({ workspaceId, schemaId }, update, opts).exec();
+
+    // Log saved identity for traceability
+    try {
+      console.log(`Saved shared schema workspaceId=${workspaceId} schemaId=${schemaId} _id=${saved._id} version=${saved.version}`);
+    } catch (e) {
+      // ignore logging errors
+    }
 
     // Also keep denormalized copy inside Workspace.sharedSchemas for backwards compatibility
     try {

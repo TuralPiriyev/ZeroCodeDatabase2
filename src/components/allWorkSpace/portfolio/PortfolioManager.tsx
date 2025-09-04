@@ -60,6 +60,9 @@ const PortfolioManager: React.FC = () => {
     type: 'info'
   });
   
+  // Maintain a mapping from workspaceId -> index in sharedSchemas / portfolios to locate existing cards reliably
+  const workspaceIdToCardIndexRef = React.useRef<Record<string, number>>({});
+
   const handlePortfolioUpdate = (message: any) => {
     switch (message.type) {
       case 'schema_shared':
@@ -89,14 +92,34 @@ const PortfolioManager: React.FC = () => {
         try {
           const payload = message.data || message;
           const { workspaceId, schemaId, version, lastModified } = payload;
-          // Update any sharedSchemas that match this workspaceId and schemaId
-          setSharedSchemas(prev => prev.map(s => {
-            const sw = (s as any);
-            if (sw.workspaceId === workspaceId && String(sw._id || '').includes(schemaId)) {
-              return { ...sw, updatedAt: lastModified || new Date().toISOString(), version: version || sw.version } as any;
+          // If we have a mapping, update the existing card in place
+          setSharedSchemas(prev => {
+            const map = workspaceIdToCardIndexRef.current || {};
+            const idx = map[workspaceId];
+            if (typeof idx === 'number' && prev[idx]) {
+              const updated = [...prev];
+              const card = { ...updated[idx] as any };
+              card.version = version || card.version;
+              // update lastModified/updatedAt fields in a backwards-compatible way
+              (card as any).lastModified = lastModified || (card as any).lastModified;
+              updated[idx] = card as any;
+              return updated;
             }
-            return s;
-          }));
+
+            // fallback: try to find card by workspaceId or schemaId
+            const foundIdx = prev.findIndex(s => (s as any).workspaceId === workspaceId || String((s as any)._id || '').includes(schemaId));
+            if (foundIdx >= 0) {
+              const updated = [...prev];
+              updated[foundIdx] = { ...updated[foundIdx] as any, version: version || (updated[foundIdx] as any).version, lastModified: lastModified || (updated[foundIdx] as any).lastModified } as any;
+              // update mapping
+              workspaceIdToCardIndexRef.current[workspaceId] = foundIdx;
+              return updated;
+            }
+
+            // Can't find existing card — avoid appending duplicates. Request a reload of portfolios instead.
+            loadPortfolios();
+            return prev;
+          });
         } catch (e) {
           console.warn('Failed to handle workspace-updated in portfolio manager', e);
         }

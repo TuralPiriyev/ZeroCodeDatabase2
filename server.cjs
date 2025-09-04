@@ -415,6 +415,9 @@ io.on('connection', (socket) => {
                   }
 
                   console.log('✅ Debounced shared schema persisted (upsert) for', workspaceId, 'schemaId:', schemaId);
+                  try {
+                    console.log(`Saved shared schema workspaceId=${workspaceId} schemaId=${schemaId} _id=${saved._id} version=${saved.version}`);
+                  } catch (e) {}
                   emitToWorkspace(workspaceId, 'workspace-updated', { workspaceId, schemaId, version: saved.version, lastModified: saved.lastModified });
                 } catch (err) {
                   console.warn('Failed to persist debounced shared schema (upsert):', err);
