@@ -29,6 +29,8 @@ const Member = require('./src/models/Member.cjs');
 
 // Configuration
 const PORT = Number(process.env.PORT) || 5000;
+// Allow override of host binding (Render requires 0.0.0.0)
+const HOST = process.env.HOST || '0.0.0.0';
 const MONGO_URL = process.env.MONGO_URL;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
 const SMTP_PORT = Number(process.env.SMTP_PORT);
@@ -524,7 +526,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, HOST, () => {
   console.log(`🚀 Server started successfully!`);
   console.log(`📡 Port: ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
