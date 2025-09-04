@@ -217,8 +217,13 @@ class MongoService {
           window.location.href = '/';
           return { exists: false, error: 'Authentication failed' };
         }
-            console.error(`Database check failed: ${response.status}`);
-            return { exists: false, error: 'Failed to check database' };
+        // Treat 404 as "does not exist" (not an error) so callers can proceed to create
+        if (response.status === 404) {
+          if (import.meta.env.DEV) console.log(`Database check: ${databaseName} not found (404)`);
+          return { exists: false };
+        }
+        console.error(`Database check failed: ${response.status}`);
+        return { exists: false, error: 'Failed to check database' };
       }
       
       const data = await response.json();
