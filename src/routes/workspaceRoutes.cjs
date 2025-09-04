@@ -504,7 +504,8 @@ router.post('/:workspaceId/transfer-owner', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/workspaces/:workspaceId/schemas - Update shared schemas
+// POST /api/workspaces/:workspaceId/schemas - Update shared schemas (atomic upsert)
+// This endpoint will upsert a canonical SharedSchema document keyed by { workspaceId, schemaId }
 router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
   try {
     const { workspaceId } = req.params;
@@ -516,8 +517,8 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Schema ID, name, and scripts are required' });
     }
 
-    const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
-    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+  const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
+  if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
   const identifiers = [];
   if (req.userId) identifiers.push(String(req.userId));
@@ -533,37 +534,49 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   if ((!member || member.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can update shared schemas' });
 
-    // If updating an existing schema (replace), only owner can perform that operation.
-    const existingSchemaIndex = workspace.sharedSchemas.findIndex(schema => schema.schemaId === schemaId);
-    if (existingSchemaIndex >= 0 && !isOwner) {
+    // Use a dedicated SharedSchema collection for canonical upsert and versioning
+    const SharedSchemaModel = require('../models/SharedSchema.cjs');
+
+    // Prevent non-owners from replacing an existing shared schema
+    const existing = await SharedSchemaModel.findOne({ workspaceId, schemaId }).lean();
+    if (existing && !isOwner) {
       return res.status(403).json({ error: 'Only workspace owners can replace an existing shared schema' });
     }
 
-  const schemaData = { schemaId, name, scripts, lastModified: new Date() };
-    if (existingSchemaIndex >= 0) {
-      workspace.sharedSchemas[existingSchemaIndex] = schemaData;
-      console.log('✅ Updated existing shared schema');
-    } else {
-      workspace.sharedSchemas.push(schemaData);
-      console.log('✅ Added new shared schema');
-    }
-    workspace.updatedAt = new Date();
-    await workspace.save();
+    // Prepare upsert update: set fields, increment version atomically
+    const update = {
+      $set: {
+        workspaceId,
+        schemaId,
+        name: String(name),
+        scripts: String(scripts),
+        lastModified: new Date(),
+        shared: true
+      },
+      $inc: { version: 1 }
+    };
+    const opts = { upsert: true, new: true };
+    const saved = await SharedSchemaModel.findOneAndUpdate({ workspaceId, schemaId }, update, opts).exec();
 
+    // Also keep denormalized copy inside Workspace.sharedSchemas for backwards compatibility
+    try {
+      workspace.sharedSchemas = workspace.sharedSchemas || [];
+      const idx = workspace.sharedSchemas.findIndex(s => s.schemaId === schemaId);
+      const entry = { schemaId, name: String(name), scripts: String(scripts), lastModified: saved.lastModified };
+      if (idx >= 0) workspace.sharedSchemas[idx] = entry; else workspace.sharedSchemas.push(entry);
+      workspace.updatedAt = new Date();
+      await workspace.save();
+    } catch (e) {
+      console.warn('Failed to update denormalized workspace.sharedSchemas:', e);
+    }
+
+    // Emit workspace-updated event with minimal metadata to workspace room
     const emitToWorkspace = req.app.get('emitToWorkspace');
     if (emitToWorkspace) {
-      // Safely parse scripts for tables information; protect against invalid JSON
-      let parsed = null;
-      try {
-        parsed = JSON.parse(scripts);
-      } catch (e) {
-        parsed = null;
-      }
-      const tables = parsed && parsed.tables ? parsed.tables : [];
-      emitToWorkspace(workspaceId, 'db_update', { schemaId, name, tables, timestamp: new Date().toISOString(), schema: scripts });
+      emitToWorkspace(workspaceId, 'workspace-updated', { workspaceId, schemaId, version: saved.version, lastModified: saved.lastModified });
     }
 
-    res.json({ success: true, message: 'Schema updated successfully', sharedSchemas: workspace.sharedSchemas });
+    res.json({ success: true, message: 'Schema updated successfully', sharedSchema: saved });
 
   } catch (error) {
     console.error('❌ Error updating shared schemas:', error);
@@ -572,6 +585,7 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
 });
 
 // PUT /api/workspaces/:workspaceId/schemas - also support update via PUT (mirrors POST)
+// Mirrors POST but enforces upsert semantics and emits workspace-updated
 router.put('/:workspaceId/schemas', authenticate, async (req, res) => {
   try {
     const { workspaceId } = req.params;
@@ -600,31 +614,33 @@ router.put('/:workspaceId/schemas', authenticate, async (req, res) => {
     const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
     if ((!member || member.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can update shared schemas' });
 
-    const existingSchemaIndex = workspace.sharedSchemas.findIndex(schema => schema.schemaId === schemaId);
-    if (existingSchemaIndex >= 0 && !isOwner) {
-      return res.status(403).json({ error: 'Only workspace owners can replace an existing shared schema' });
-    }
+    const SharedSchemaModel = require('../models/SharedSchema.cjs');
+    const existing = await SharedSchemaModel.findOne({ workspaceId, schemaId }).lean();
+    if (existing && !isOwner) return res.status(403).json({ error: 'Only workspace owners can replace an existing shared schema' });
 
-    const schemaData = { schemaId, name, scripts, lastModified: new Date() };
-    if (existingSchemaIndex >= 0) {
-      workspace.sharedSchemas[existingSchemaIndex] = schemaData;
-      console.log('✅ Updated existing shared schema (PUT)');
-    } else {
-      workspace.sharedSchemas.push(schemaData);
-      console.log('✅ Added new shared schema (PUT)');
+    const update = {
+      $set: { workspaceId, schemaId, name: String(name), scripts: String(scripts), lastModified: new Date(), shared: true },
+      $inc: { version: 1 }
+    };
+    const opts = { upsert: true, new: true };
+    const saved = await SharedSchemaModel.findOneAndUpdate({ workspaceId, schemaId }, update, opts).exec();
+
+    // keep denormalized list on Workspace
+    try {
+      workspace.sharedSchemas = workspace.sharedSchemas || [];
+      const idx = workspace.sharedSchemas.findIndex(s => s.schemaId === schemaId);
+      const entry = { schemaId, name: String(name), scripts: String(scripts), lastModified: saved.lastModified };
+      if (idx >= 0) workspace.sharedSchemas[idx] = entry; else workspace.sharedSchemas.push(entry);
+      workspace.updatedAt = new Date();
+      await workspace.save();
+    } catch (e) {
+      console.warn('Failed to update denormalized workspace.sharedSchemas (PUT):', e);
     }
-    workspace.updatedAt = new Date();
-    await workspace.save();
 
     const emitToWorkspace = req.app.get('emitToWorkspace');
-    if (emitToWorkspace) {
-      let parsed = null;
-      try { parsed = JSON.parse(scripts); } catch (e) { parsed = null; }
-      const tables = parsed && parsed.tables ? parsed.tables : [];
-      emitToWorkspace(workspaceId, 'db_update', { schemaId, name, tables, timestamp: new Date().toISOString(), schema: scripts });
-    }
+    if (emitToWorkspace) emitToWorkspace(workspaceId, 'workspace-updated', { workspaceId, schemaId, version: saved.version, lastModified: saved.lastModified });
 
-    res.json({ success: true, message: 'Schema updated successfully', sharedSchemas: workspace.sharedSchemas });
+    res.json({ success: true, message: 'Schema updated successfully', sharedSchema: saved });
   } catch (error) {
     console.error('❌ Error updating shared schemas (PUT):', error);
     res.status(500).json({ error: 'Failed to update shared schemas' });

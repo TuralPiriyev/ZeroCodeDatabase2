@@ -84,6 +84,23 @@ const PortfolioManager: React.FC = () => {
           ));
         }
         break;
+      case 'workspace-updated':
+        // Message from server: { workspaceId, schemaId, version, lastModified }
+        try {
+          const payload = message.data || message;
+          const { workspaceId, schemaId, version, lastModified } = payload;
+          // Update any sharedSchemas that match this workspaceId and schemaId
+          setSharedSchemas(prev => prev.map(s => {
+            const sw = (s as any);
+            if (sw.workspaceId === workspaceId && String(sw._id || '').includes(schemaId)) {
+              return { ...sw, updatedAt: lastModified || new Date().toISOString(), version: version || sw.version } as any;
+            }
+            return s;
+          }));
+        } catch (e) {
+          console.warn('Failed to handle workspace-updated in portfolio manager', e);
+        }
+        break;
     }
   };
 
