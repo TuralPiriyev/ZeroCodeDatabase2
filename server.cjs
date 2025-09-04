@@ -370,6 +370,13 @@ io.on('connection', (socket) => {
         const workspaceId = socket.workspaceId || data.workspaceId;
         const schemaId = String(data.schemaId);
         if (workspaceId) {
+          // Enforce server-side authority: reject client attempts to create new canonical docs via socket
+          if (data.createNew) {
+            try {
+              socket.emit('error', { message: 'Cannot create new canonical document for a shared schema; use canonical workspaceId' });
+            } catch (e) {}
+            return;
+          }
           try {
             // Ensure maps exist
             if (!pendingSchemaWrites.has(workspaceId)) pendingSchemaWrites.set(workspaceId, new Map());

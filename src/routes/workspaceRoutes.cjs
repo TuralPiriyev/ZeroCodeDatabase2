@@ -545,7 +545,7 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
 
     // Reject client attempts to "create new" a shared schema by supplying a different workspaceId
     if (req.body.createNew) {
-      return res.status(400).json({ error: 'Cannot create new workspace document for a shared schema. Use the canonical workspaceId' });
+    return res.status(400).json({ error: 'Cannot create new canonical document for a shared schema; use canonical workspaceId' });
     }
 
     // Prepare upsert update: set fields, increment version atomically
