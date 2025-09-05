@@ -450,7 +450,9 @@ const PortfolioManager: React.FC = () => {
   const handleLoadPortfolio = (p: Portfolio) => {
     try {
       const schemaObj = JSON.parse(p.scripts);
-      importSchema(schemaObj);
+      // When loading a portfolio item, prefer the server canonical snapshot
+      // so shared schemas replace any local snapshots.
+      importSchema(schemaObj, { forceServer: true });
       
       // Show success notification
       setNotification({
