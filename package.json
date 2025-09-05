@@ -49,9 +49,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.3.0",
-    "@testing-library/user-event": "^14.6.1",
+    
     "@types/babel__core": "^7.20.5",
     "@types/babel__generator": "^7.27.0",
     "@types/babel__template": "^7.4.4",
@@ -107,8 +105,7 @@
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.11",
     "globals": "^15.9.0",
-    "jest": "^30.0.5",
-    "jest-environment-jsdom": "^30.0.5",
+    
     "postcss": "^8.5.6",
     "stylelint": "^16.21.0",
     "stylelint-config-standard": "^38.0.0",
