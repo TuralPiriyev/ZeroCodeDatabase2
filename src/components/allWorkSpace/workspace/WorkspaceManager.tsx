@@ -7,6 +7,7 @@ import { socketService } from '../../../services/socketService';
 import InvitationForm from '../../workspace/InvitationForm';
 import TeamMembersList from '../../workspace/TeamMembersList';
 import SharedSchemas from '../../workspace/SharedSchemas';
+import CursorPresence from './CursorPresence';
 
 interface WorkspaceData {
   id: string;
@@ -237,7 +238,7 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
     : 'viewer';
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col" style={{ position: 'relative' }}>
       {/* Header */}
       <div className="p-6 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between mb-4">
@@ -317,7 +318,7 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
         </nav>
       </div>
 
-      {/* Tab Content - Scrollable */}
+  {/* Tab Content - Scrollable */}
       <div className="flex-1 overflow-y-auto p-6">
         {activeTab === 'members' && (
             <TeamMembersList
@@ -336,11 +337,15 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
         )}
 
         {activeTab === 'schemas' && (
-          <SharedSchemas
-            workspaceId={workspace.id}
-            onSchemaLoad={handleSchemaLoad}
-            currentUserRole={currentUserRole}
-          />
+          <div style={{ position: 'relative' }}>
+            <SharedSchemas
+              workspaceId={workspace.id}
+              onSchemaLoad={handleSchemaLoad}
+              currentUserRole={currentUserRole}
+            />
+            {/* Cursor presence overlay */}
+            <CursorPresence workspaceId={workspace.id} />
+          </div>
         )}
       </div>
     </div>
