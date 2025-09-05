@@ -45,6 +45,7 @@ const PortfolioManager: React.FC = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importSQL, setImportSQL] = useState('');
   const [importError, setImportError] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
   // single shared socket instance managed by simpleWebSocketService
   
   // Notification modal state

@@ -36,8 +36,9 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
     loadSharedSchemas();
     loadPortfolios().catch(e => console.warn('Failed to load portfolios for SharedSchemas', e));
     const handle = () => loadSharedSchemas();
-    socketService.on('db_update', handle);
-    return () => socketService.off('db_update', handle);
+  socketService.on('db_update', handle);
+  socketService.on('workspace-updated', handle);
+  return () => { socketService.off('db_update', handle); socketService.off('workspace-updated', handle); };
   }, [workspaceId]);
 
   const loadSharedSchemas = async () => {
@@ -66,6 +67,21 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
 
   const loadSchema = (schema: SharedSchema) => {
     try { const schemaData = JSON.parse(schema.scripts); onSchemaLoad(schemaData); } catch (err) { console.error('Failed to parse schema:', err); setError('Failed to load schema. Invalid format.'); }
+  };
+
+  const saveToShared = async (schema: SharedSchema) => {
+    if (!currentSchema) return setError('No current schema loaded to save');
+    // Only allow owners/editors to save
+    if (!isOwner && currentUserRole === 'viewer') return setError('You do not have permission to save to this shared schema');
+    setIsLoading(true); setError(null);
+    try {
+      const payload = { schemaId: schema.schemaId, name: (currentSchema as any).name || schema.name, scripts: JSON.stringify(currentSchema) };
+      await apiService.post(`/workspaces/${workspaceId}/schemas`, payload);
+      await loadSharedSchemas();
+    } catch (err) {
+      console.error('Failed to save to shared schema:', err);
+      setError(err instanceof Error ? err.message : 'Failed to save to shared schema');
+    } finally { setIsLoading(false); }
   };
 
   const downloadSchema = (schema: SharedSchema) => {
@@ -193,6 +209,9 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
                 <div className="flex gap-2">
                   <button onClick={() => loadSchema(schema)} className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm"><Eye className="w-4 h-4" />Load</button>
                   <button onClick={() => downloadSchema(schema)} className="flex items-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm"><Download className="w-4 h-4" /></button>
+                  {(isOwner || currentUserRole === 'owner' || currentUserRole === 'editor') && (
+                    <button onClick={() => saveToShared(schema)} disabled={isLoading} title="Save current editor into this shared schema" className="flex items-center gap-2 px-3 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg text-sm">Save</button>
+                  )}
                 </div>
               </div>
             );

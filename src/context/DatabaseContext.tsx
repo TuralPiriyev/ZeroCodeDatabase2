@@ -4,6 +4,8 @@ import initSqlJs from 'sql.js';
 import { v4 as uuidv4 } from 'uuid';
 import {mongoService} from '../services/mongoService'
 import { collaborationService } from '../services/collaborationService';
+import { apiService } from '../services/apiService';
+import { simpleWebSocketService } from '../services/simpleWebSocketService';
 
 export interface Column {
   id: string;
@@ -537,6 +539,8 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [currentSchema]);
+
+  
   // Enhanced team collaboration functions with MongoDB integration
   const validateUsername = useCallback(async (username: string): Promise<boolean> => {
     return await mongoService.validateUsername(username);
@@ -775,6 +779,42 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       console.error('Failed to load shared schemas:', error);
     }
   }, [importSchema]);
+
+  // Listen for server-emitted canonical shared-schema updates and refresh lists/active schema
+  useEffect(() => {
+    const handler = async (payload: any) => {
+      try {
+        if (!payload) return;
+        // payload: { schemaId, sharedId, teamId, updatedAt, changedFields }
+        // Refresh shared schemas list for current workspace/team (best-effort)
+        try { if (currentSchema && currentSchema.id) await loadSharedSchemas(currentSchema.id); } catch (e) { /* best-effort */ }
+
+        // If the currently-open schema matches the updated shared schema, fetch canonical and replace
+        const matchesCurrent = currentSchema && ((currentSchema as any)._id === payload.schemaId || (currentSchema as any).sharedId === payload.sharedId || currentSchema.id === payload.schemaId || currentSchema.id === payload.sharedId);
+        if (matchesCurrent) {
+          try {
+            const id = (currentSchema as any).sharedId || (currentSchema as any)._id || currentSchema.id;
+            const res = await apiService.get(`/schemas/${id}`);
+            if (res && res.schema) {
+              setCurrentSchema(res.schema);
+              // also update schemas list
+              setSchemas(prev => prev.map(s => ((s as any).id === (currentSchema as any).id) ? { ...s, ...res.schema } : s));
+            }
+          } catch (err) {
+            console.warn('Failed to fetch canonical schema after schemaUpdated event', err);
+          }
+        }
+      } catch (e) {
+        console.warn('schemaUpdated handler failed', e);
+      }
+    };
+
+    try {
+      simpleWebSocketService.on('schemaUpdated', handler);
+    } catch (e) {}
+
+    return () => { try { simpleWebSocketService.off('schemaUpdated', handler); } catch (e) {} };
+  }, [currentSchema, loadSharedSchemas]);
 
   const syncSchemaToWorkspace = useCallback(async (workspaceId: string) => {
     try {
