@@ -5,6 +5,7 @@ import { useDatabase } from '../../../context/DatabaseContext';
 import { usePortfolio, Portfolio } from '../../../context/PortfolioContext';
 import { mongoService } from '../../../services/mongoService';
 import { simpleWebSocketService } from '../../../services/simpleWebSocketService';
+import { collaborationService } from '../../../services/collaborationService';
 import { SQLParser } from '../../../utils/sqlParser';
 import NotificationModal from '../../common/NotificationModal';
 
@@ -45,7 +46,6 @@ const PortfolioManager: React.FC = () => {
   const [importSQL, setImportSQL] = useState('');
   const [importError, setImportError] = useState('');
   // single shared socket instance managed by simpleWebSocketService
-  const [isConnected, setIsConnected] = useState(false);
   
   // Notification modal state
   const [notification, setNotification] = useState<{
@@ -175,13 +175,7 @@ const PortfolioManager: React.FC = () => {
     };
   }, [loadPortfolios]);
 
-  const sendMessage = (message: any) => {
-    try {
-      simpleWebSocketService.sendMessage(message);
-    } catch (e) {
-      console.warn('Failed to send portfolio message', e);
-    }
-  };
+  // (sendMessage removed; portfolio now uses collaborationService for shared saves)
   
   const loadSharedSchemas = async () => {
     try {
@@ -388,44 +382,36 @@ const PortfolioManager: React.FC = () => {
   };
 
   const handleSaveCurrentSchema = async () => {
+    // Always keep local snapshot and local list in sync
     saveSchema();
     const payload = JSON.stringify(currentSchema);
+
     try {
-      await savePortfolio(currentSchema.name, payload);
-      await loadPortfolios();
-      
-      // Broadcast schema save to collaborators if shared
-      if (currentSchema.isShared && isConnected) {
-        sendMessage({
-          type: 'schema_updated',
-          data: { 
-            schema: { 
-              _id: currentSchema.id, 
-              name: currentSchema.name, 
-              scripts: payload 
-            } 
-          },
-          userId: 'current_user',
-          timestamp: new Date().toISOString()
-        });
+      // If this is a shared schema and the collaboration socket is connected,
+      // send the canonical schema to the collaboration service so the server
+      // performs an authoritative upsert and broadcasts to other members.
+      if (currentSchema.isShared && collaborationService && (collaborationService as any).isConnected) {
+        try {
+          collaborationService.sendSchemaChange({ type: 'schema_saved', data: {}, schemaId: currentSchema.id, schema: payload } as any);
+          // Refresh shared/portfolio list after a short delay to reflect server-side changes
+          setTimeout(() => loadPortfolios().catch(() => {}), 300);
+        } catch (e) {
+          console.warn('Failed to send shared schema save via collaborationService, falling back to portfolio save', e);
+          await savePortfolio(currentSchema.name, payload);
+          await loadPortfolios();
+        }
+      } else {
+        // Non-shared: save to user's portfolio as before
+        await savePortfolio(currentSchema.name, payload);
+        await loadPortfolios();
       }
-      
+
       // Show success notification
-      setNotification({
-        isOpen: true,
-        title: 'Success',
-        message: 'Portfolio saved successfully',
-        type: 'success'
-      });
+      setNotification({ isOpen: true, title: 'Success', message: 'Schema saved', type: 'success' });
     } catch (err: any) {
-      console.error('Portfolio save error:', err);
+      console.error('Portfolio/schema save error:', err);
       // Show error notification
-      setNotification({
-        isOpen: true,
-        title: 'Error',
-        message: err.message || 'Failed to save portfolio',
-        type: 'error'
-      });
+      setNotification({ isOpen: true, title: 'Error', message: err.message || 'Failed to save schema', type: 'error' });
     }
   };
 

@@ -10,14 +10,6 @@ Run server:
 $env:MONGO_URI='mongodb://127.0.0.1:27017/zc_dev'; node server/index.cjs
 ```
 
-Run tests (requires local MongoDB):
-
-```powershell
-npm test
-# or with jest directly
-npx jest tests/collab.integration.test.cjs --runInBand
-```
-
 Notes:
 - Server exposes Socket.IO at path `/ws/replicate` and REST snapshot endpoints under `/api/workspaces/:id/...`.
 - The client helper `client/services/collab.cjs` demonstrates how to create a Yjs doc, join a workspace and send/receive updates.
