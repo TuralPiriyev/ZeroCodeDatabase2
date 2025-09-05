@@ -520,16 +520,29 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
   const workspace = await Workspace.findOne({ id: workspaceId, isActive: true });
   if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
 
-  const identifiers = [];
-  if (req.userId) identifiers.push(String(req.userId));
-  if (req.user && req.user.username) identifiers.push(String(req.user.username));
-  if (req.user && req.user.email) identifiers.push(String(req.user.email));
-  // use module-level escapeForRegex
-  let member = null;
-  if (identifiers.length > 0) {
-    const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
-    member = await Member.findOne({ workspaceId, $or: or });
-  }
+    const identifiers = [];
+    if (req.userId) identifiers.push(String(req.userId));
+    if (req.user && req.user.username) identifiers.push(String(req.user.username));
+    if (req.user && req.user.email) identifiers.push(String(req.user.email));
+    // use module-level escapeForRegex
+    let member = null;
+    if (identifiers.length > 0) {
+      // match either userId exact or username case-insensitive so legacy/migrated records match
+      const orClauses = identifiers.flatMap(id => [ { userId: id }, { username: new RegExp('^' + escapeForRegex(id) + '$', 'i') } ]);
+      member = await Member.findOne({ workspaceId, $or: orClauses });
+      // fallback: some Member.workspaceId fields may be stored as ObjectId in migrated data
+      if (!member) {
+        try {
+          const mongoose = require('mongoose');
+          if (/^[0-9a-fA-F]{24}$/.test(String(workspaceId))) {
+            const objId = mongoose.Types.ObjectId(String(workspaceId));
+            member = await Member.findOne({ workspaceId: objId, $or: orClauses });
+          }
+        } catch (e) {
+          // ignore invalid ObjectId or lookup errors
+        }
+      }
+    }
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
   const canUpdate = isOwner || (member && (member.role === 'owner' || member.role === 'editor'));
@@ -620,8 +633,19 @@ router.put('/:workspaceId/schemas', authenticate, async (req, res) => {
     const escapeForRegex = (s) => String(s).replace(/[.*+?^${}()|[\\]\\]/g, '\\$&');
     let member = null;
     if (identifiers.length > 0) {
-      const or = identifiers.map(id => ({ username: new RegExp('^' + escapeForRegex(id) + '$', 'i') }));
-      member = await Member.findOne({ workspaceId, $or: or });
+      const orClauses = identifiers.flatMap(id => [ { userId: id }, { username: new RegExp('^' + escapeForRegex(id) + '$', 'i') } ]);
+      member = await Member.findOne({ workspaceId, $or: orClauses });
+      if (!member) {
+        try {
+          const mongoose = require('mongoose');
+          if (/^[0-9a-fA-F]{24}$/.test(String(workspaceId))) {
+            const objId = mongoose.Types.ObjectId(String(workspaceId));
+            member = await Member.findOne({ workspaceId: objId, $or: orClauses });
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
     }
     const usernameLookup = req.user && req.user.username ? req.user.username : null;
     const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
