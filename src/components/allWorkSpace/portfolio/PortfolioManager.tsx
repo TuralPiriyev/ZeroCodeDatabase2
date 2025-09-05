@@ -4,6 +4,7 @@ import { ArrowRight, Folder, Calendar, Eye, Trash2, Plus, Code, Upload, FileText
 import { useDatabase } from '../../../context/DatabaseContext';
 import { usePortfolio, Portfolio } from '../../../context/PortfolioContext';
 import { mongoService } from '../../../services/mongoService';
+import { useAuth } from '../../../context/AuthContext';
 import { simpleWebSocketService } from '../../../services/simpleWebSocketService';
 import { collaborationService } from '../../../services/collaborationService';
 import { SQLParser } from '../../../utils/sqlParser';
@@ -37,6 +38,8 @@ const PortfolioManager: React.FC = () => {
     savePortfolio,
     deletePortfolio,
   } = usePortfolio();
+
+  const { getCurrentUser } = useAuth();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newSchemaName, setNewSchemaName] = useState('');
@@ -180,8 +183,10 @@ const PortfolioManager: React.FC = () => {
   
   const loadSharedSchemas = async () => {
     try {
-      // Load schemas shared with current user
-      const shared = await mongoService.getUserWorkspaces('current_user');
+  // Load schemas shared with current user
+  const currentUser = getCurrentUser();
+  const username = currentUser?.username || currentUser?.id || 'current_user';
+  const shared = await mongoService.getUserWorkspaces(username);
       setSharedSchemas(shared);
     } catch (error) {
       console.error('Failed to load shared schemas:', error);
