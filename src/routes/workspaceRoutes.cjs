@@ -532,15 +532,16 @@ router.post('/:workspaceId/schemas', authenticate, async (req, res) => {
   }
   const usernameLookup = req.user && req.user.username ? req.user.username : null;
   const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
-  if ((!member || member.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can update shared schemas' });
+  const canUpdate = isOwner || (member && (member.role === 'owner' || member.role === 'editor'));
+  if (!canUpdate) return res.status(403).json({ error: 'Only workspace owners or editors can update shared schemas' });
 
     // Use a dedicated SharedSchema collection for canonical upsert and versioning
     const SharedSchemaModel = require('../models/SharedSchema.cjs');
 
-    // Prevent non-owners from replacing an existing shared schema
+    // Prevent unauthorized users from replacing an existing shared schema
     const existing = await SharedSchemaModel.findOne({ workspaceId, schemaId }).lean();
-    if (existing && !isOwner) {
-      return res.status(403).json({ error: 'Only workspace owners can replace an existing shared schema' });
+    if (existing && !(isOwner || (member && (member.role === 'owner' || member.role === 'editor')))) {
+      return res.status(403).json({ error: 'Only workspace owners or editors can replace an existing shared schema' });
     }
 
     // Reject client attempts to "create new" a shared schema by supplying a different workspaceId
@@ -624,11 +625,12 @@ router.put('/:workspaceId/schemas', authenticate, async (req, res) => {
     }
     const usernameLookup = req.user && req.user.username ? req.user.username : null;
     const isOwner = workspace.ownerId && (workspace.ownerId.toString ? workspace.ownerId.toString() === req.userId : workspace.ownerId === usernameLookup || workspace.ownerId === req.userId);
-    if ((!member || member.role !== 'owner') && !isOwner) return res.status(403).json({ error: 'Only workspace owners can update shared schemas' });
+  const canUpdate = isOwner || (member && (member.role === 'owner' || member.role === 'editor'));
+  if (!canUpdate) return res.status(403).json({ error: 'Only workspace owners or editors can update shared schemas' });
 
     const SharedSchemaModel = require('../models/SharedSchema.cjs');
-    const existing = await SharedSchemaModel.findOne({ workspaceId, schemaId }).lean();
-    if (existing && !isOwner) return res.status(403).json({ error: 'Only workspace owners can replace an existing shared schema' });
+  const existing = await SharedSchemaModel.findOne({ workspaceId, schemaId }).lean();
+  if (existing && !(isOwner || (member && (member.role === 'owner' || member.role === 'editor')))) return res.status(403).json({ error: 'Only workspace owners or editors can replace an existing shared schema' });
 
     const update = {
       $set: { workspaceId, schemaId, name: String(name), scripts: String(scripts), lastModified: new Date(), shared: true },
