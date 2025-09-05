@@ -1444,7 +1444,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     }
   }, [schemas]);
 
-  const saveSchema = useCallback(() => {
+  const saveSchema = useCallback(async () => {
     setSchemas(prev => {
       const existingIndex = prev.findIndex(s => s.id === currentSchema.id);
       if (existingIndex >= 0) {
@@ -1455,20 +1455,41 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       return [...prev, currentSchema];
     });
 
-    // If this is a shared schema, notify collaboration service with the full canonical
-    // schema so the server can perform an authoritative upsert and broadcast updates.
+    // If this is a shared schema, call the server PUT /api/schemas/:id to update canonical
     try {
       if (currentSchema && currentSchema.isShared) {
-        const serialized = JSON.stringify(currentSchema);
+        // call API with concurrency token (updatedAt)
+        const payload = {
+          name: currentSchema.name,
+          tables: currentSchema.tables,
+          relationships: currentSchema.relationships,
+          isShared: true,
+          teamId: (currentSchema as any).teamId,
+          updatedAt: currentSchema.updatedAt
+        };
         try {
-          collaborationService.sendSchemaChange({ type: 'schema_saved', data: {}, schemaId: currentSchema.id, schema: serialized } as any);
-        } catch (e) {
-          // Best-effort fallback: emit a db_update event so any listeners can import the persisted schema
-          try { (collaborationService as any).emit && (collaborationService as any).emit('db_update', { schemaId: currentSchema.id, schema: serialized }); } catch (e2) {}
+          // Use either _id or sharedId as identifier; prefer sharedId if present
+          const id = (currentSchema as any)._id || (currentSchema as any).sharedId || currentSchema.id;
+          // call API (apiService imported at module level)
+          const updated = await apiService.put(`/schemas/${id}`, payload);
+          // update local state with server-canonical doc
+          setSchemas(prev => prev.map(s => s.id === currentSchema.id ? { ...s, ...updated.schema } : s));
+        } catch (err: any) {
+          // Map HTTP errors to UI behavior
+          if (err && err.message && err.message.includes('403')) {
+            // permission
+            window.alert('You do not have permission to update this shared schema.');
+          } else if (err && err.message && err.message.includes('409')) {
+            window.alert('Conflict detected. The shared schema has been updated elsewhere. Please refresh and try again.');
+          } else {
+            console.warn('Shared schema save failed, falling back to collaboration emit', err);
+            // best-effort: notify collaboration service
+            try { collaborationService.sendSchemaChange({ type: 'schema_saved', data: {}, schemaId: currentSchema.id, schema: JSON.stringify(currentSchema) } as any); } catch (e2) {}
+          }
         }
       }
     } catch (e) {
-      console.warn('Failed to notify collaboration service about schema save', e);
+      console.warn('Failed to update shared schema via API', e);
     }
 
   },

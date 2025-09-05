@@ -24,6 +24,7 @@ const Workspace = require('./src/models/Workspace.cjs');
 const { authenticate } = require('./src/middleware/auth.cjs');
 const portfolioRoutes = require('./src/routes/portfolioRoutes.cjs');
 const workspaceRoutes = require('./src/routes/workspaceRoutes.cjs');
+const schemaRoutes = require('./src/routes/schemaRoutes.cjs');
 const Invitation = require('./src/models/Invitation.cjs');
 const Member = require('./src/models/Member.cjs');
 
@@ -159,6 +160,7 @@ app.get('/api/health', (req, res) => {
 // API Routes - All under /api prefix
 app.use('/api/portfolios', authenticate, portfolioRoutes);
 app.use('/api/workspaces', authenticate, workspaceRoutes);
+app.use('/api/schemas', authenticate, schemaRoutes);
 
 // User validation endpoint
 app.post('/api/users/validate', async (req, res) => {
