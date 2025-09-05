@@ -809,11 +809,46 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       }
     };
 
+    let workspaceHandler: any = null;
     try {
       simpleWebSocketService.on('schemaUpdated', handler);
+      // Also listen to workspace-updated (emitted by workspaceRoutes) so we auto-apply updates
+      workspaceHandler = async (payload: any) => {
+        try {
+          if (!payload) return;
+          // payload: { workspaceId, schemaId, version, lastModified }
+          const { workspaceId, schemaId } = payload;
+          if (!schemaId) return;
+
+          // Refresh shared schemas list for current workspace/team (best-effort)
+          try { if (currentSchema && currentSchema.id) await loadSharedSchemas(currentSchema.id); } catch (e) { /* best-effort */ }
+
+          const matchesCurrent = currentSchema && ((currentSchema as any)._id === schemaId || (currentSchema as any).sharedId === schemaId || currentSchema.id === schemaId);
+          if (matchesCurrent) {
+            try {
+              // Fetch workspace sharedSchemas and find the updated script
+              const ws = await apiService.get(`/workspaces/${workspaceId}`);
+              const list = Array.isArray(ws.sharedSchemas) ? ws.sharedSchemas : (ws.sharedSchemas || []);
+              const match = list.find((s: any) => String(s.schemaId) === String(schemaId));
+              if (match && match.scripts) {
+                const schemaData = JSON.parse(match.scripts);
+                importSchema(schemaData);
+                setCurrentSchema(schemaData as any);
+                setSchemas(prev => prev.map(s => ((s as any).id === (currentSchema as any).id) ? { ...s, ...schemaData } : s));
+              }
+            } catch (err) {
+              console.warn('Failed to fetch canonical workspace schema after workspace-updated', err);
+            }
+          }
+        } catch (e) {
+          console.warn('workspace-updated handler failed', e);
+        }
+      };
+
+      simpleWebSocketService.on('workspace-updated', workspaceHandler);
     } catch (e) {}
 
-    return () => { try { simpleWebSocketService.off('schemaUpdated', handler); } catch (e) {} };
+    return () => { try { simpleWebSocketService.off('schemaUpdated', handler); } catch (e) {} try { if (workspaceHandler) simpleWebSocketService.off('workspace-updated', workspaceHandler); } catch (e) {} };
   }, [currentSchema, loadSharedSchemas]);
 
   const syncSchemaToWorkspace = useCallback(async (workspaceId: string) => {
