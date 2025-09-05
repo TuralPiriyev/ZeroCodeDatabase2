@@ -125,7 +125,7 @@ export interface DatabaseContextType {
   currentSchema: Schema;
   schemas: Schema[];
   sqlEngine: any;
-  importSchema: (schema: Schema) => void;
+  importSchema: (schema: Schema, options?: { forceServer?: boolean }) => void;
   // Table operations
   addTable: (table: Omit<Table, 'id' | 'rowCount' | 'data'>) => void;
   removeTable: (tableId: string) => void;
