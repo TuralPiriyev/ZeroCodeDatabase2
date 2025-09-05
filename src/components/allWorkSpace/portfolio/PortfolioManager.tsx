@@ -7,6 +7,7 @@ import { mongoService } from '../../../services/mongoService';
 import { useAuth } from '../../../context/AuthContext';
 import { simpleWebSocketService } from '../../../services/simpleWebSocketService';
 import { collaborationService } from '../../../services/collaborationService';
+import { workspaceService } from '../../../services/workspaceService';
 import { SQLParser } from '../../../utils/sqlParser';
 import NotificationModal from '../../common/NotificationModal';
 
@@ -48,7 +49,6 @@ const PortfolioManager: React.FC = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importSQL, setImportSQL] = useState('');
   const [importError, setImportError] = useState('');
-  const [isConnected, setIsConnected] = useState(false);
   // single shared socket instance managed by simpleWebSocketService
   
   // Notification modal state
@@ -144,7 +144,6 @@ const PortfolioManager: React.FC = () => {
         simpleWebSocketService.connect(wsUrl)
           .then(() => {
             console.log('✅ Portfolio WebSocket connected');
-            setIsConnected(simpleWebSocketService.isConnected());
           })
           .catch((err) => {
             console.error('Failed to initialize portfolio WebSocket:', err);
@@ -393,18 +392,41 @@ const PortfolioManager: React.FC = () => {
     const payload = JSON.stringify(currentSchema);
 
     try {
-      // If this is a shared schema and the collaboration socket is connected,
-      // send the canonical schema to the collaboration service so the server
-      // performs an authoritative upsert and broadcasts to other members.
-      if (currentSchema.isShared && collaborationService && (collaborationService as any).isConnected) {
-        try {
-          collaborationService.sendSchemaChange({ type: 'schema_saved', data: {}, schemaId: currentSchema.id, schema: payload } as any);
-          // Refresh shared/portfolio list after a short delay to reflect server-side changes
-          setTimeout(() => loadPortfolios().catch(() => {}), 300);
-        } catch (e) {
-          console.warn('Failed to send shared schema save via collaborationService, falling back to portfolio save', e);
-          await savePortfolio(currentSchema.name, payload);
-          await loadPortfolios();
+      if (currentSchema.isShared) {
+        // Prefer the collaboration service when available so the server persists the canonical document
+        if (collaborationService && (collaborationService as any).isConnected) {
+          try {
+            collaborationService.sendSchemaChange({ type: 'schema_saved', data: {}, schemaId: currentSchema.id, schema: payload } as any);
+            setTimeout(() => loadPortfolios().catch(() => {}), 300);
+          } catch (e) {
+            console.warn('Failed to send shared schema via collaborationService, trying workspace API', e);
+            const workspaceId = (currentSchema as any).workspaceId || (currentSchema as any).workspace?.id || workspaceService.getCurrentWorkspaceId();
+            if (workspaceId) {
+              const ok = await workspaceService.updateSharedSchema(workspaceId, currentSchema.id, currentSchema.name, payload);
+              if (!ok) {
+                // fallback to personal portfolio only if API update fails
+                await savePortfolio(currentSchema.name, payload);
+              }
+              await loadPortfolios();
+            } else {
+              // No workspace context; fall back to personal portfolio
+              await savePortfolio(currentSchema.name, payload);
+              await loadPortfolios();
+            }
+          }
+        } else {
+          // If no collaboration socket, call workspace API directly
+          const workspaceId = (currentSchema as any).workspaceId || (currentSchema as any).workspace?.id || workspaceService.getCurrentWorkspaceId();
+          if (workspaceId) {
+            const ok = await workspaceService.updateSharedSchema(workspaceId, currentSchema.id, currentSchema.name, payload);
+            if (!ok) {
+              await savePortfolio(currentSchema.name, payload);
+            }
+            await loadPortfolios();
+          } else {
+            await savePortfolio(currentSchema.name, payload);
+            await loadPortfolios();
+          }
         }
       } else {
         // Non-shared: save to user's portfolio as before
