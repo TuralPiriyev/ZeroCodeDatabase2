@@ -244,12 +244,12 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     
     initSQL();
   }, []);
-  const importSchema = useCallback((schema: Schema) => {
+  const importSchema = useCallback((schema: Schema, options?: { forceServer?: boolean }) => {
     // When importing a schema from server, try to restore any local snapshot
     const snapshotKey = `collab:${schema.id}`;
     try {
       const raw = localStorage.getItem(snapshotKey);
-      if (raw) {
+      if (!options?.forceServer && raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.schema) {
           console.log('Restoring local collaboration snapshot for', schema.id);
@@ -271,6 +271,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
           setCurrentSchema(schema);
         }
       } else {
+        // Force server-provided schema (or no local snapshot present)
         setCurrentSchema(schema);
       }
     } catch (err) {
@@ -830,9 +831,9 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
               const ws = await apiService.get(`/workspaces/${workspaceId}`);
               const list = Array.isArray(ws.sharedSchemas) ? ws.sharedSchemas : (ws.sharedSchemas || []);
               const match = list.find((s: any) => String(s.schemaId) === String(schemaId));
-              if (match && match.scripts) {
+                if (match && match.scripts) {
                 const schemaData = JSON.parse(match.scripts);
-                importSchema(schemaData);
+                importSchema(schemaData, { forceServer: true });
                 setCurrentSchema(schemaData as any);
                 setSchemas(prev => prev.map(s => ((s as any).id === (currentSchema as any).id) ? { ...s, ...schemaData } : s));
               }
