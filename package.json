@@ -14,7 +14,6 @@
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@paypal/react-paypal-js": "^8.8.3",
-    "@socket.io/redis-adapter": "^8.3.0",
     "axios": "^1.10.0",
     "bcrypt": "^6.0.0",
     "body-parser": "^2.2.0",
@@ -23,12 +22,10 @@
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.19.2",
-    "fast-json-patch": "^3.1.1",
     "file": "^0.2.2",
     "framer-motion": "^11.0.3",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.344.0",
-    "mongodb": "^6.19.0",
     "mongoose": "^8.16.0",
     "moongose": "^1.0.0",
     "node-cron": "^4.2.0",
@@ -43,7 +40,6 @@
     "react-router-dom": "^6.22.0",
     "react-xarrows": "^2.0.2",
     "reactflow": "^11.11.4",
-    "redis": "^5.8.2",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "sql.js": "^1.13.0",
@@ -53,6 +49,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
+    
     "@types/babel__core": "^7.20.5",
     "@types/babel__generator": "^7.27.0",
     "@types/babel__template": "^7.4.4",
@@ -108,6 +105,7 @@
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",
     "eslint-plugin-react-refresh": "^0.4.11",
     "globals": "^15.9.0",
+    
     "postcss": "^8.5.6",
     "stylelint": "^16.21.0",
     "stylelint-config-standard": "^38.0.0",

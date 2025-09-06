@@ -14,7 +14,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const cron = require('node-cron');
 const cookieParser = require('cookie-parser');
-//Sukur Allaha
+
 // Load environment variables
 dotenv.config();
 
@@ -27,6 +27,8 @@ const workspaceRoutes = require('./src/routes/workspaceRoutes.cjs');
 const schemaRoutes = require('./src/routes/schemaRoutes.cjs');
 const Invitation = require('./src/models/Invitation.cjs');
 const Member = require('./src/models/Member.cjs');
+// Yjs manager (production helper)
+const yjsManager = require('./server/yjsManager.cjs');
 
 // Configuration
 const PORT = Number(process.env.PORT) || 5000;
@@ -356,6 +358,33 @@ io.on('connection', (socket) => {
   socket.on('join-room', (workspaceId) => {
     try {
       console.log(`🏠 (join-room) Socket ${socket.id} joining workspace: ${workspaceId}`);
+      // Join the socket.io room
+      socket.join(`workspace_${workspaceId}`);
+      socket.workspaceId = workspaceId;
+
+      // Ensure server has a Y.Doc for this workspace and send initial snapshot
+      try {
+        (async () => {
+          const snap = yjsManager.encodeState(workspaceId);
+          if (snap && socket) {
+            socket.emit('yjs-snapshot', snap);
+          }
+        })();
+      } catch (e) {
+        console.warn('Failed to send initial yjs snapshot', e);
+      }
+
+      // Handle incoming Yjs updates from clients
+      socket.on('yjs-update', async (payload) => {
+        try {
+          if (!payload || !payload.workspaceId || !payload.update) return;
+          if (String(payload.workspaceId) !== String(workspaceId)) return;
+          const u8 = Buffer.from(payload.update, 'base64');
+          await yjsManager.applyUpdateFromClient(workspaceId, u8, { socketId: socket.id });
+        } catch (e) {
+          console.warn('Failed to handle yjs-update from client', e);
+        }
+      });
 
   socket.on('cursor_update', (data) => relayIfInWorkspace('cursor_update', data));
   socket.on('user_join', (data) => relayIfInWorkspace('user_joined', data));

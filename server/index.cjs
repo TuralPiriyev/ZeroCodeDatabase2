@@ -25,27 +25,6 @@ async function start() {
   const server = http.createServer(app);
   const io = new socketIo.Server(server, { path: '/ws/replicate' });
 
-  // expose io on the app so routes can emit events
-  app.set('io', io);
-
-  // Redis adapter for scaling (optional)
-  if (process.env.REDIS_URL) {
-    try {
-      const { createAdapter } = require('@socket.io/redis-adapter');
-      const { createClient } = require('redis');
-      const pubClient = createClient({ url: process.env.REDIS_URL });
-      const subClient = pubClient.duplicate();
-      Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
-        io.adapter(createAdapter(pubClient, subClient));
-        console.log('🔁 socket.io redis adapter connected');
-      }).catch(err => {
-        console.warn('Redis adapter connection failed', err);
-      });
-    } catch (e) {
-      console.warn('Redis adapter not configured or missing packages', e.message);
-    }
-  }
-
   // In-memory docs: Map<workspaceId, { doc: Y.Doc, version: Number, pending: Number }>
   const docs = new Map();
 
@@ -69,31 +48,68 @@ async function start() {
   }
 
   // Socket handlers
-  // Setup workspace sockets (optimistic JSON-patch protocol)
-  try {
-    const { connectWithRetry } = require('./db/mongo.cjs');
-    const mongoUri = process.env.MONGO_URI || process.env.MONGO_URL;
-    const dbName = process.env.MONGO_DBNAME || process.env.MONGO_DB || 'test';
-    connectWithRetry(mongoUri, dbName).then(({ client, db, emitter } = {}) => {
-      const { setupWorkspaceSockets } = require('./sockets/workspaceSockets.cjs');
-      setupWorkspaceSockets(io);
+  io.on('connection', socket => {
+    console.log('Socket connected', socket.id);
 
-      // forward changeStream events to socket.io rooms
+    socket.on('join-room', async ({ workspaceId }) => {
       try {
-        emitter.on('workspace:full', ({ workspaceId, doc }) => {
-          try {
-            io.to(`workspace:${workspaceId}`).emit('workspace:full', { workspaceId, doc });
-          } catch (e) { console.error('emit workspace:full failed', e); }
-        });
-        emitter.on('workspace:deleted', ({ workspaceId }) => {
-          try { io.to(`workspace:${workspaceId}`).emit('workspace:deleted', { workspaceId }); } catch (e) { console.error(e); }
-        });
-        console.log('🔁 ChangeStream -> socket.io wiring established');
-      } catch (e) { console.warn('Failed to wire ChangeStream to io', e); }
-    }).catch(err => console.warn('workspace sockets init failed', err));
-  } catch (e) {
-    console.warn('workspace sockets require failed', e.message);
-  }
+        console.log('join-room', workspaceId, 'socket', socket.id);
+        socket.join(`workspace_${workspaceId}`);
+        const entry = await ensureDoc(workspaceId);
+        // send full snapshot (encode state)
+        const state = Y.encodeStateAsUpdate(entry.doc);
+        // send as binary Buffer
+        socket.emit('snapshot', state);
+      } catch (e) {
+        console.error('join-room error', e);
+      }
+    });
+
+    socket.on('y-update', async ({ workspaceId, update }) => {
+      try {
+        if (!workspaceId || !update) return;
+        const entry = await ensureDoc(workspaceId);
+        // update may arrive as Buffer or base64 string
+        let buf = update;
+        if (typeof update === 'string') buf = Buffer.from(update, 'base64');
+        // applyUpdate
+        Y.applyUpdate(entry.doc, buf);
+        entry.version = (entry.version || 0) + 1;
+        entry.pending = (entry.pending || 0) + 1;
+        // broadcast to others
+        socket.to(`workspace_${workspaceId}`).emit('y-update', { workspaceId, update: buf });
+        // persist debounced: simple approach - persist every 5 updates or every 5s
+        if (entry.pending >= 5) {
+          const state = Y.encodeStateAsUpdate(entry.doc);
+          await persistSnapshot(workspaceId, state, entry.version);
+          entry.pending = 0;
+          console.log('Persisted snapshot (count based) for', workspaceId);
+        } else {
+          // schedule timeout persister per workspace if not set
+          if (!entry._persistTimer) {
+            entry._persistTimer = setTimeout(async () => {
+              try {
+                const state = Y.encodeStateAsUpdate(entry.doc);
+                await persistSnapshot(workspaceId, state, entry.version);
+                entry.pending = 0;
+                console.log('Persisted snapshot (timer) for', workspaceId);
+              } catch (e) {
+                console.error('Persist timer error', e);
+              } finally {
+                entry._persistTimer = null;
+              }
+            }, 5000);
+          }
+        }
+      } catch (e) {
+        console.error('y-update error', e);
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Socket disconnected', socket.id);
+    });
+  });
 
   // REST endpoints
   app.get('/api/workspaces/:id/snapshot', async (req, res) => {

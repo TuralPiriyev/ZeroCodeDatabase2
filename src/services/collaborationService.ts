@@ -1,6 +1,5 @@
 // src/services/collaborationService.ts
 import { simpleWebSocketService } from './simpleWebSocketService';
-import * as jsonpatch from 'fast-json-patch';
 
 export interface CollaborationUser {
   id: string;
@@ -53,8 +52,8 @@ export default class CollaborationService {
   }
 
   async connect(): Promise<void> {
-    if (!this.currentUser || (!this.schemaId && !this.workspaceId)) {
-      const error = new Error('Must initialize with user and workspaceId or schema ID before connecting');
+    if (!this.currentUser || !this.schemaId) {
+      const error = new Error('Must initialize with user and schema ID before connecting');
       console.error('❌ Connection failed:', error.message);
       return Promise.reject(error);
     }
@@ -71,7 +70,7 @@ export default class CollaborationService {
   await simpleWebSocketService.connect(joinTarget || undefined);
   // mark connectionId as the workspaceId/schemaId we used
   this.connectionId = joinTarget;
-  // ensure we have joined the workspace on the service (prefer workspaceId)
+  // ensure we have joined the workspace on the service
   if (this.workspaceId) simpleWebSocketService.joinWorkspace(this.workspaceId);
   else if (this.schemaId) simpleWebSocketService.joinWorkspace(this.schemaId);
       this.isConnected = true;
@@ -182,7 +181,8 @@ export default class CollaborationService {
   }
 
   private sendUserJoin() {
-  if (!this.currentUser || this.userJoinSent) return;
+    if (!this.currentUser || !this.schemaId || this.userJoinSent) return;
+    if (!this.currentUser || this.userJoinSent) return;
     try {
       // With socket.io server in this project, the canonical way to join workspace is joinWorkspace()
       // and for other services we emit an event with user info. We'll emit 'user_join' event name
@@ -193,8 +193,8 @@ export default class CollaborationService {
         username: this.currentUser.username,
         role: this.currentUser.role,
         color: this.currentUser.color,
-        workspaceId: this.workspaceId || undefined,
-        schemaId: this.schemaId || undefined,
+        workspaceId: this.workspaceId,
+        schemaId: this.schemaId,
         timestamp: new Date().toISOString()
       });
       this.userJoinSent = true;
@@ -309,7 +309,7 @@ export default class CollaborationService {
       data: change.data,
       userId: this.currentUser.id,
       username: this.currentUser.username,
-  workspaceId: this.workspaceId || undefined,
+      workspaceId: this.workspaceId || undefined,
       schemaId: change.schemaId || this.schemaId || undefined,
       schema: change.schema || undefined,
       timestamp: new Date().toISOString()
@@ -371,8 +371,7 @@ export default class CollaborationService {
       try {
         simpleWebSocketService.send('user_leave', {
           userId: this.currentUser.id,
-          schemaId: this.schemaId,
-          workspaceId: this.workspaceId || undefined
+          schemaId: this.schemaId
         });
       } catch (error) {
         console.warn('⚠️ Failed to send user_leave message:', error);
@@ -385,8 +384,8 @@ export default class CollaborationService {
     });
     this._socketHandlers.clear();
 
-    // leave workspace if joined (prefer workspaceId)
-    if (this.workspaceId || this.schemaId) {
+    // leave workspace if joined
+    if (this.schemaId) {
       try {
         simpleWebSocketService.leaveWorkspace();
       } catch (e) {
@@ -425,26 +424,6 @@ export default class CollaborationService {
       }
     }
     return operation;
-  }
-
-  // JSON-patch helpers for optimistic syncing
-  createPatches(oldDoc: any, newDoc: any) {
-    try {
-      return jsonpatch.compare(oldDoc, newDoc) as any[];
-    } catch (e) {
-      console.error('createPatches failed', e);
-      return [];
-    }
-  }
-
-  applyPatchesLocally(doc: any, patches: any[]) {
-    try {
-      const res = jsonpatch.applyPatch(doc, patches, /*validate*/ true);
-      return res.newDocument;
-    } catch (e) {
-      console.error('applyPatchesLocally failed', e);
-      return doc;
-    }
   }
 
   private mergeTableOperations(op1: any, op2: any): any {
