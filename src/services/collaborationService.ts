@@ -30,6 +30,7 @@ export default class CollaborationService {
   private connectionId: string | null = null; // we'll store schemaId here
   private currentUser: CollaborationUser | null = null;
   private schemaId: string | null = null;
+  private workspaceId: string | null = null;
   private eventHandlers: Map<string, Function[]> = new Map();
   public isConnected = false;
   private userJoinSent = false;
@@ -41,11 +42,13 @@ export default class CollaborationService {
     // All WebSocket operations delegated to simpleWebSocketService
   }
 
-  initialize(user: CollaborationUser, schemaId: string) {
+  // Initialize with user, workspaceId and optional schemaId (schema being edited)
+  initialize(user: CollaborationUser, workspaceId: string, schemaId?: string) {
     this.currentUser = user;
-    this.schemaId = schemaId;
+    this.workspaceId = workspaceId || null;
+    this.schemaId = schemaId || null;
     this.userJoinSent = false; // Reset join status
-    console.log('🔧 CollaborationService initialized:', { user: user.username, schemaId });
+    console.log('🔧 CollaborationService initialized:', { user: user.username, workspaceId, schemaId });
   }
 
   async connect(): Promise<void> {
@@ -62,12 +65,14 @@ export default class CollaborationService {
     }
 
     try {
-      // Connect via shared service (service will join workspace if schemaId provided)
-      await simpleWebSocketService.connect(this.schemaId);
-      // mark connectionId as the schemaId for our bookkeeping
-      this.connectionId = this.schemaId;
-      // ensure we have joined the workspace on the service
-      simpleWebSocketService.joinWorkspace(this.schemaId);
+  // Connect via shared service (connect to socket and join workspace room)
+  const joinTarget: string | null = (this.workspaceId || this.schemaId) ? (this.workspaceId || this.schemaId) as string : null;
+  await simpleWebSocketService.connect(joinTarget || undefined);
+  // mark connectionId as the workspaceId/schemaId we used
+  this.connectionId = joinTarget;
+  // ensure we have joined the workspace on the service
+  if (this.workspaceId) simpleWebSocketService.joinWorkspace(this.workspaceId);
+  else if (this.schemaId) simpleWebSocketService.joinWorkspace(this.schemaId);
       this.isConnected = true;
       console.log('✅ Collaboration WebSocket connected successfully (via simpleWebSocketService)');
 
@@ -177,7 +182,7 @@ export default class CollaborationService {
 
   private sendUserJoin() {
     if (!this.currentUser || !this.schemaId || this.userJoinSent) return;
-
+    if (!this.currentUser || this.userJoinSent) return;
     try {
       // With socket.io server in this project, the canonical way to join workspace is joinWorkspace()
       // and for other services we emit an event with user info. We'll emit 'user_join' event name
@@ -188,6 +193,7 @@ export default class CollaborationService {
         username: this.currentUser.username,
         role: this.currentUser.role,
         color: this.currentUser.color,
+        workspaceId: this.workspaceId,
         schemaId: this.schemaId,
         timestamp: new Date().toISOString()
       });
@@ -303,10 +309,11 @@ export default class CollaborationService {
       data: change.data,
       userId: this.currentUser.id,
       username: this.currentUser.username,
+      workspaceId: this.workspaceId || undefined,
+      schemaId: change.schemaId || this.schemaId || undefined,
+      schema: change.schema || undefined,
       timestamp: new Date().toISOString()
     };
-    if (change.schemaId) payload.schemaId = change.schemaId;
-    if (change.schema) payload.schema = change.schema;
     simpleWebSocketService.send('schema_change', payload);
   }
 

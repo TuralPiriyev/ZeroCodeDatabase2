@@ -74,7 +74,7 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
         if (!schemaId) return;
 
         // initialize collaborationService with user and schema id
-        collaborationService.initialize({ id: currentUser.id, username: currentUser.username, role: currentUser.role || 'editor', color: (currentUser as any).color || '#7c3aed' } as any, String(schemaId));
+  collaborationService.initialize({ id: currentUser.id, username: currentUser.username, role: currentUser.role || 'editor', color: (currentUser as any).color || '#7c3aed' } as any, workspace.id, String(schemaId));
         try {
           await collaborationService.connect();
           console.log('✅ collaborationService connected for schema', schemaId);
