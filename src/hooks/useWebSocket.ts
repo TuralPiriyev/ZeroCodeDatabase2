@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { useRef, useEffect } from 'react';
-import type { Patch } from 'fast-json-patch';
+import type { Operation } from 'fast-json-patch';
 
 type Handlers = { [k: string]: Function[] };
 
@@ -60,7 +60,7 @@ export function useWebSocket(token?: string, url?: string) {
     socketRef.current.emit('workspace:leave', { workspaceId });
   }
 
-  function sendPatch(workspaceId: string, patches: Patch[], clientVersion: number, tempId?: string) {
+  function sendPatch(workspaceId: string, patches: Operation[], clientVersion: number, tempId?: string) {
     return new Promise<any>((resolve) => {
       if (!socketRef.current) return resolve({ ok: false, status: 'disconnected' });
       socketRef.current.emit('workspace:update', { workspaceId, patches, clientVersion, tempId }, (ack: any) => {

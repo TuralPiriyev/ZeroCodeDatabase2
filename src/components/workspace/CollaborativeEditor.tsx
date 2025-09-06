@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { collaborationService } from '../../services/collaborationService';
-import type { Patch } from 'fast-json-patch';
+import type { Operation } from 'fast-json-patch';
 
 interface Props { workspaceId: string; initialDoc: any; token?: string }
 
@@ -22,8 +22,8 @@ export default function CollaborativeEditor({ workspaceId, initialDoc, token }: 
       setDoc(newDoc);
       setVersion(payload.version);
     };
-    const handleFull = (payload: any) => { if (payload && payload.doc) { setDoc(payload.doc); setVersion(payload.doc.version || 0); } };
-    const handleConflict = (payload: any) => {
+  const handleFull = (payload: any) => { if (payload && payload.doc) { setDoc(payload.doc); setVersion(payload.doc.version || 0); } };
+  const handleConflict = (_payload: any) => {
       // request full
       // attempt to fetch full document
       console.warn('Conflict, requesting full');
@@ -37,7 +37,7 @@ export default function CollaborativeEditor({ workspaceId, initialDoc, token }: 
 
   // naive editor change handler for demo - real app should diff on change
   function onLocalChange(newDoc: any) {
-    const patches: Patch[] = collaborationService.createPatches(doc, newDoc) as any;
+    const patches: Operation[] = collaborationService.createPatches(doc, newDoc) as any;
     if (!patches || patches.length === 0) { setDoc(newDoc); return; }
     const tempId = String(Date.now()) + Math.random().toString(36).slice(2,8);
     // optimistically apply
