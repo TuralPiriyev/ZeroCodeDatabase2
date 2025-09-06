@@ -1,3 +1,15 @@
+import React from 'react';
+import CollaborativeEditor from '../../workspace/CollaborativeEditor';
+import CollaborativeCursors from '../../workspace/CollaborativeCursors';
+
+export default function RealTimeCollaboration({ workspaceId, initialDoc, token }: any) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <CollaborativeEditor workspaceId={workspaceId} initialDoc={initialDoc} token={token} />
+      <CollaborativeCursors workspaceId={workspaceId} token={token} />
+    </div>
+  );
+}
 // src/components/allWorkSpace/tools/RealTimeCollaboration.tsx
 import React, { useState, useEffect } from "react";
 // subscription gating removed to always show collaboration
