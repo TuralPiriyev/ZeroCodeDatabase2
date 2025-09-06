@@ -4,6 +4,7 @@ import { useDatabase } from '../../../context/DatabaseContext';
 import { useAuth } from '../../../context/AuthContext';
 import { apiService } from '../../../services/apiService';
 import { socketService } from '../../../services/socketService';
+import { collaborationService } from '../../../services/collaborationService';
 import InvitationForm from '../../workspace/InvitationForm';
 import TeamMembersList from '../../workspace/TeamMembersList';
 import SharedSchemas from '../../workspace/SharedSchemas';
@@ -55,8 +56,40 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
         // ignore
       }
       socketService.leaveWorkspace();
+      try { collaborationService.disconnect(); } catch (e) {}
     };
   }, [workspaceId]);
+
+  // Initialize collaborationService when a shared schema is loaded
+  useEffect(() => {
+    let mounted = true;
+    const tryInitCollab = async () => {
+      try {
+        const currentUser = getCurrentUser();
+        if (!mounted || !currentUser || !workspace) return;
+
+        // determine active shared schema id if one loaded in workspace state
+  const activeShared = (workspace as any).selectedSchema || (workspace.sharedSchemas && workspace.sharedSchemas[0]);
+  const schemaId = activeShared ? (activeShared.schemaId || (activeShared as any)._id) : null;
+        if (!schemaId) return;
+
+        // initialize collaborationService with user and schema id
+        collaborationService.initialize({ id: currentUser.id, username: currentUser.username, role: currentUser.role || 'editor', color: (currentUser as any).color || '#7c3aed' } as any, String(schemaId));
+        try {
+          await collaborationService.connect();
+          console.log('✅ collaborationService connected for schema', schemaId);
+        } catch (e) {
+          console.warn('Failed to connect collaborationService:', e);
+        }
+      } catch (e) {
+        console.warn('collaboration init error', e);
+      }
+    };
+
+    tryInitCollab();
+
+    return () => { mounted = false; };
+  }, [workspace, getCurrentUser]);
 
   const initializeWorkspace = async () => {
     try {
