@@ -65,8 +65,41 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
     if (!dateValue) return null; if (dateValue instanceof Date) return isNaN(dateValue.getTime()) ? null : dateValue; if (typeof dateValue === 'string') { const parsed = new Date(dateValue); return isNaN(parsed.getTime()) ? null : parsed; } return null;
   };
 
-  const loadSchema = (schema: SharedSchema) => {
-    try { const schemaData = JSON.parse(schema.scripts); onSchemaLoad(schemaData); } catch (err) { console.error('Failed to parse schema:', err); setError('Failed to load schema. Invalid format.'); }
+  const loadSchema = async (schema: SharedSchema) => {
+    setIsLoading(true); setError(null);
+    try {
+      // Request workspace with specific schemaId so server returns the canonical selectedSchema
+      const res = await apiService.get(`/workspaces/${workspaceId}?schemaId=${encodeURIComponent(schema.schemaId)}`);
+      const selected = (res && res.selectedSchema) ? res.selectedSchema : null;
+      if (selected && selected.scripts) {
+        try {
+          const schemaData = JSON.parse(selected.scripts);
+          // use onSchemaLoad which typically calls importSchema in parent; prefer server source
+          onSchemaLoad(schemaData);
+          // Refresh local list to ensure timestamps and scripts match server
+          await loadSharedSchemas();
+        } catch (err) {
+          console.error('Failed to parse server schema.scripts:', err);
+          setError('Failed to load schema from server (invalid format)');
+        }
+      } else if (schema.scripts) {
+        // fallback to the denormalized copy we already have
+        try {
+          const schemaData = JSON.parse(schema.scripts);
+          onSchemaLoad(schemaData);
+        } catch (err) {
+          console.error('Failed to parse schema:', err);
+          setError('Failed to load schema. Invalid format.');
+        }
+      } else {
+        setError('No schema found on server');
+      }
+    } catch (err) {
+      console.error('Failed to fetch shared schema from server:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch shared schema');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const saveToShared = async (schema: SharedSchema) => {
