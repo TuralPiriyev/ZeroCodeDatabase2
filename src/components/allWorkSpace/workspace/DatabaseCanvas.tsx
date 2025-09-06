@@ -34,7 +34,7 @@ const DatabaseCanvasInner: React.FC<DatabaseCanvasProps> = ({
   onPanChange, 
   onZoomChange 
 }) => {
-  const { currentSchema, updateTable, addRelationship, syncWorkspaceWithMongoDB } = useDatabase();
+  const { currentSchema, updateTable, addRelationship } = useDatabase();
   const { setViewport, getViewport } = useReactFlow();
 
   // Convert database tables to React Flow nodes
