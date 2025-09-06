@@ -14,7 +14,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const cron = require('node-cron');
 const cookieParser = require('cookie-parser');
-
+//Sukur Allaha
 // Load environment variables
 dotenv.config();
 
