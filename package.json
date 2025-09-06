@@ -42,6 +42,7 @@
     "reactflow": "^11.11.4",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
+  "fast-json-patch": "^3.1.1",
     "sql.js": "^1.13.0",
     "stripe": "^18.3.0",
     "tailwind": "^4.0.0",
