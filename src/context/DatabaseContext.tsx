@@ -119,8 +119,6 @@ export interface Schema {
   lastSyncedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
-  // Optional optimistic version used by collaborative flows
-  version?: number;
 }
 
 export interface DatabaseContextType {
@@ -885,53 +883,6 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       return () => clearInterval(syncInterval);
     }
   }, [currentSchema.isShared, syncWorkspaceWithMongoDB]);
-
-  // Lightweight background poller: when editing a shared schema, poll the canonical
-  // workspace every 5 seconds and force-replace the local schema if the server copy
-  // differs. This is a pragmatic fallback for cases where socket-based realtime
-  // delivery may be delayed or missed.
-  useEffect(() => {
-    if (!currentSchema || !currentSchema.isShared) return;
-
-    let stopped = false;
-
-    const pollCanonical = async () => {
-      try {
-        const workspaceId = (currentSchema as any).workspaceId || currentSchema.id;
-        if (!workspaceId) return;
-
-        const ws = await apiService.get(`/workspaces/${workspaceId}`);
-        const list = Array.isArray(ws.sharedSchemas) ? ws.sharedSchemas : (ws.sharedSchemas || []);
-
-        const match = list.find((s: any) => String(s.schemaId) === String((currentSchema as any).sharedId || currentSchema.id || (currentSchema as any)._id));
-        if (match && match.scripts) {
-          let remoteSchema: any = null;
-          try { remoteSchema = JSON.parse(match.scripts); } catch (e) { remoteSchema = null; }
-          if (!remoteSchema) return;
-
-          // Compare a simple JSON serialization to detect changes.
-          const localStr = JSON.stringify(currentSchema);
-          const remoteStr = JSON.stringify(remoteSchema);
-          if (localStr !== remoteStr) {
-            // Force import canonical server copy
-            importSchema(remoteSchema, { forceServer: true });
-            setCurrentSchema(remoteSchema as any);
-            // also update list cache
-            setSchemas(prev => prev.map(s => ((s as any).id === (currentSchema as any).id) ? { ...s, ...remoteSchema } : s));
-          }
-        }
-      } catch (err) {
-        // best-effort; don't spam console on transient errors
-        // console.debug('workspace poll error', err);
-      }
-    };
-
-  // Run immediately then every 3s
-  pollCanonical();
-  const id = setInterval(() => { if (!stopped) pollCanonical(); }, 3000);
-
-    return () => { stopped = true; clearInterval(id); };
-  }, [currentSchema, importSchema, setSchemas]);
 
   const addTable = useCallback((table: Omit<Table, 'id' | 'rowCount' | 'data'>) => {
     const newTable: Table = {
