@@ -7,6 +7,7 @@ import { mongoService } from '../../../services/mongoService';
 import { useAuth } from '../../../context/AuthContext';
 import { simpleWebSocketService } from '../../../services/simpleWebSocketService';
 import { collaborationService } from '../../../services/collaborationService';
+import { useWebSocket } from '../../../hooks/useWebSocket';
 import { workspaceService } from '../../../services/workspaceService';
 import { SQLParser } from '../../../utils/sqlParser';
 import NotificationModal from '../../common/NotificationModal';
@@ -66,6 +67,9 @@ const PortfolioManager: React.FC = () => {
   
   // Maintain a mapping from workspaceId -> index in sharedSchemas / portfolios to locate existing cards reliably
   const workspaceIdToCardIndexRef = React.useRef<Record<string, number>>({});
+  const lastSavedSchemaRef = React.useRef<any>(null);
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') || undefined : undefined;
+  const ws = useWebSocket(token);
 
   const handlePortfolioUpdate = (message: any) => {
     switch (message.type) {
@@ -393,40 +397,60 @@ const PortfolioManager: React.FC = () => {
 
     try {
       if (currentSchema.isShared) {
-        // Prefer the collaboration service when available so the server persists the canonical document
-        if (collaborationService && (collaborationService as any).isConnected) {
-          try {
-            collaborationService.sendSchemaChange({ type: 'schema_saved', data: {}, schemaId: currentSchema.id, schema: payload } as any);
-            setTimeout(() => loadPortfolios().catch(() => {}), 300);
-          } catch (e) {
-            console.warn('Failed to send shared schema via collaborationService, trying workspace API', e);
-            const workspaceId = (currentSchema as any).workspaceId || (currentSchema as any).workspace?.id || workspaceService.getCurrentWorkspaceId();
-            if (workspaceId) {
-              const ok = await workspaceService.updateSharedSchema(workspaceId, currentSchema.id, currentSchema.name, payload);
-              if (!ok) {
-                // fallback to personal portfolio only if API update fails
-                await savePortfolio(currentSchema.name, payload);
+        try {
+          // attempt JSON-patch optimistic update via socket
+          const workspaceId = (currentSchema as any).workspaceId || (currentSchema as any).workspace?.id || workspaceService.getCurrentWorkspaceId();
+          if (ws && workspaceId) {
+            // join if not already
+            ws.joinWorkspace(workspaceId);
+            const previous = lastSavedSchemaRef.current || {};
+            const patches = collaborationService.createPatches(previous, currentSchema);
+            const clientVersion = (previous && previous.version) || (currentSchema.version || 0);
+            const tempId = String(Date.now()) + Math.random().toString(36).slice(2,8);
+            if (patches && patches.length > 0) {
+              const ack = await ws.sendPatch(workspaceId, patches, clientVersion, tempId);
+              if (ack && ack.ok) {
+                lastSavedSchemaRef.current = { ...(currentSchema), version: ack.version };
+                setTimeout(() => loadPortfolios().catch(() => {}), 300);
+              } else if (ack && ack.status === 'conflict') {
+                const full = await ws.requestFull(workspaceId);
+                if (full && full.ok && full.doc) {
+                  importSchema(full.doc, { forceServer: true });
+                  lastSavedSchemaRef.current = full.doc;
+                }
+              } else {
+                // fallback to REST
+                await workspaceService.updateSharedSchema(workspaceId, currentSchema.id, currentSchema.name, payload);
+                lastSavedSchemaRef.current = currentSchema;
+                setTimeout(() => loadPortfolios().catch(() => {}), 300);
               }
+            } else {
+              // nothing changed — ensure server has canonical copy
+              await workspaceService.updateSharedSchema(workspaceId, currentSchema.id, currentSchema.name, payload);
+              lastSavedSchemaRef.current = currentSchema;
+              setTimeout(() => loadPortfolios().catch(() => {}), 300);
+            }
+          } else {
+            // no workspace context or socket — fallback to API
+            const wsId = (currentSchema as any).workspaceId || (currentSchema as any).workspace?.id || workspaceService.getCurrentWorkspaceId();
+            if (wsId) {
+              const ok = await workspaceService.updateSharedSchema(wsId, currentSchema.id, currentSchema.name, payload);
+              if (!ok) await savePortfolio(currentSchema.name, payload);
               await loadPortfolios();
             } else {
-              // No workspace context; fall back to personal portfolio
               await savePortfolio(currentSchema.name, payload);
               await loadPortfolios();
             }
           }
-        } else {
-          // If no collaboration socket, call workspace API directly
-          const workspaceId = (currentSchema as any).workspaceId || (currentSchema as any).workspace?.id || workspaceService.getCurrentWorkspaceId();
-          if (workspaceId) {
-            const ok = await workspaceService.updateSharedSchema(workspaceId, currentSchema.id, currentSchema.name, payload);
-            if (!ok) {
-              await savePortfolio(currentSchema.name, payload);
-            }
-            await loadPortfolios();
+        } catch (e) {
+          console.warn('patch send failed, falling back to REST', e);
+          const wsId = (currentSchema as any).workspaceId || (currentSchema as any).workspace?.id || workspaceService.getCurrentWorkspaceId();
+          if (wsId) {
+            await workspaceService.updateSharedSchema(wsId, currentSchema.id, currentSchema.name, payload);
           } else {
             await savePortfolio(currentSchema.name, payload);
-            await loadPortfolios();
           }
+          setTimeout(() => loadPortfolios().catch(() => {}), 300);
         }
       } else {
         // Non-shared: save to user's portfolio as before
