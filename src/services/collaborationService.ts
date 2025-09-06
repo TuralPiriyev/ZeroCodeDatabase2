@@ -1,5 +1,6 @@
 // src/services/collaborationService.ts
 import { simpleWebSocketService } from './simpleWebSocketService';
+import * as jsonpatch from 'fast-json-patch';
 
 export interface CollaborationUser {
   id: string;
@@ -424,6 +425,26 @@ export default class CollaborationService {
       }
     }
     return operation;
+  }
+
+  // JSON-patch helpers for optimistic syncing
+  createPatches(oldDoc: any, newDoc: any) {
+    try {
+      return jsonpatch.compare(oldDoc, newDoc) as any[];
+    } catch (e) {
+      console.error('createPatches failed', e);
+      return [];
+    }
+  }
+
+  applyPatchesLocally(doc: any, patches: any[]) {
+    try {
+      const res = jsonpatch.applyPatch(doc, patches, /*validate*/ true);
+      return res.newDocument;
+    } catch (e) {
+      console.error('applyPatchesLocally failed', e);
+      return doc;
+    }
   }
 
   private mergeTableOperations(op1: any, op2: any): any {
