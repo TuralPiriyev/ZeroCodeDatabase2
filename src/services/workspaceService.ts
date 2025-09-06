@@ -55,16 +55,14 @@ class WorkspaceService {
     }
 
     this.currentWorkspaceId = workspaceId;
-    const wsUrl = `/ws/workspace/${workspaceId}`;
-
     try {
-      // connect establishes the underlying socket and may join workspace automatically
-      await simpleWebSocketService.connect(wsUrl);
+      // connect establishes the underlying socket using the configured default path
+      await simpleWebSocketService.connect();
 
       // record connectionId as workspaceId (we use a single socket instance)
       this.connectionId = this.currentWorkspaceId;
 
-      // ensure we are joined (joinWorkspace is safe to call even if already joined)
+      // ensure we are joined to the workspace room (server uses workspace_room naming)
       simpleWebSocketService.joinWorkspace(workspaceId);
 
       console.log('✅ Connected to workspace WebSocket:', workspaceId);
@@ -99,26 +97,32 @@ class WorkspaceService {
 
   private handleWorkspaceMessage(message: any) {
     if (!message) return;
-    console.log('📨 Workspace message received:', message.type, message);
+    // message may be { type: 'workspace-updated', data: {...} } or direct { type: 'db_update', data }
+    const rawType = message.type || (message.event || '') || '';
+    const normalizedType = String(rawType).replace(/-/g, '_');
+    console.log('📨 Workspace message received:', rawType, '->', normalizedType, message);
 
-    switch (message.type) {
+    switch (normalizedType) {
       case 'db_update':
-        this.handleDatabaseUpdate(message.data);
+        this.handleDatabaseUpdate(message.data || message);
         break;
       case 'member_joined':
-        this.emit('member_joined', message.data);
+      case 'user_joined':
+        this.emit('member_joined', message.data || message);
         break;
       case 'member_left':
-        this.emit('member_left', message.data);
+      case 'user_left':
+        this.emit('member_left', message.data || message);
         break;
       case 'schema_shared':
-        this.emit('schema_shared', message.data);
+      case 'schema_change':
+        this.emit('schema_shared', message.data || message);
         break;
       case 'workspace_updated':
-        this.emit('workspace_updated', message.data);
+        this.emit('workspace_updated', message.data || message);
         break;
       default:
-        console.log('Unknown workspace message type:', message.type);
+        console.log('Unknown workspace message type:', rawType);
     }
   }
 
@@ -185,28 +189,26 @@ class WorkspaceService {
       return;
     }
 
-    const message = {
-      type: 'db_update',
-      data: {
-        schemaId,
-        changeType,
-        ...data,
-        timestamp: new Date().toISOString()
-      }
+    const payload = {
+      workspaceId: this.currentWorkspaceId,
+      schemaId,
+      changeType,
+      name: data?.name,
+      schema: data?.scripts || data?.schema || data,
+      timestamp: new Date().toISOString()
     };
 
-    // Prefer canonical send(event, data) — server should listen to 'db_update' event
+    // Server listens for 'schema_change' socket event — use that so it will persist and emit workspace-updated
     try {
-      simpleWebSocketService.send('db_update', message.data);
-      console.log('📤 Database update broadcasted:', changeType, schemaId);
+      simpleWebSocketService.send('schema_change', payload);
+      console.log('📤 Schema change broadcasted via socket:', changeType, schemaId);
     } catch (err) {
-      // fallback to backward-compatible sendMessage
+      // fallback: send as generic message wrapper
       try {
-        // send whole message object; simpleWebSocketService.sendMessage will emit message.type
-        simpleWebSocketService.sendMessage(message);
-        console.log('📤 Database update broadcasted (fallback):', changeType, schemaId);
+        simpleWebSocketService.sendMessage({ type: 'schema_change', data: payload });
+        console.log('📤 Schema change broadcasted (fallback):', changeType, schemaId);
       } catch (e) {
-        console.error('Failed to broadcast database update:', e);
+        console.error('Failed to broadcast schema change:', e);
       }
     }
   }
