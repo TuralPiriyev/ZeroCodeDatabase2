@@ -39,15 +39,26 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
         // Load shared schemas into local state
         if (workspaceData.sharedSchemas.length > 0) {
           console.log('Loading shared schemas:', workspaceData.sharedSchemas.length);
-          // For now, load the first shared schema
+          // For now, load the first shared schema but prefer canonical server copy
           const firstSchema = workspaceData.sharedSchemas[0];
-          if (firstSchema.scripts) {
-            try {
-              const schemaData = JSON.parse(firstSchema.scripts);
-              importSchema(schemaData);
-              console.log('✅ Shared schema loaded:', firstSchema.name);
-            } catch (parseError) {
-              console.error('Failed to parse shared schema:', parseError);
+          try {
+            const res = await workspaceService.getWorkspace(workspaceId);
+            const selected = res && (res as any).selectedSchema ? (res as any).selectedSchema : null;
+            if (selected && selected.scripts) {
+              try {
+                const schemaData = JSON.parse(selected.scripts);
+                importSchema(schemaData);
+                console.log('✅ Shared schema loaded (server canonical):', selected.name || firstSchema.name);
+              } catch (err) {
+                console.error('Failed to parse selectedSchema from server:', err);
+              }
+            } else if (firstSchema.scripts) {
+              try { importSchema(JSON.parse(firstSchema.scripts)); console.log('✅ Shared schema loaded (denormalized)'); } catch (parseError) { console.error('Failed to parse shared schema:', parseError); }
+            }
+          } catch (err) {
+            console.warn('Failed to re-fetch workspace for canonical schema, falling back to local copy', err);
+            if (firstSchema.scripts) {
+              try { importSchema(JSON.parse(firstSchema.scripts)); } catch (e) { console.error('Failed to parse shared schema fallback:', e); }
             }
           }
         }
