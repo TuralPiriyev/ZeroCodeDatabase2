@@ -20,6 +20,8 @@ interface PortfolioContextType {
   loadPortfolios: () => Promise<void>;
   savePortfolio: (name: string, scripts: string) => Promise<void>;
   deletePortfolio: (id: string) => Promise<void>;
+  startPolling?: (intervalMs?: number) => void;
+  stopPolling?: () => void;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
@@ -38,6 +40,30 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
     } catch (err) {
       console.error('Portfolioları yükləmə xətası:', err);
       setPortfolios([]);
+    }
+  }, []);
+
+  // Polling controls (SWR-style refresh fallback)
+  const pollRef = React.useRef<number | null>(null);
+  const startPolling = useCallback((intervalMs: number = 3000) => {
+    try {
+      if (pollRef.current) return; // already polling
+      pollRef.current = window.setInterval(() => {
+        loadPortfolios().catch(() => {});
+      }, intervalMs) as unknown as number;
+    } catch (e) {
+      console.warn('Failed to start portfolio polling', e);
+    }
+  }, [loadPortfolios]);
+
+  const stopPolling = useCallback(() => {
+    try {
+      if (pollRef.current) {
+        window.clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    } catch (e) {
+      console.warn('Failed to stop portfolio polling', e);
     }
   }, []);
 
@@ -80,7 +106,7 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   return (
     <PortfolioContext.Provider
-      value={{ portfolios, loadPortfolios, savePortfolio, deletePortfolio }}
+  value={{ portfolios, loadPortfolios, savePortfolio, deletePortfolio, startPolling, stopPolling }}
     >
       {children}
     </PortfolioContext.Provider>

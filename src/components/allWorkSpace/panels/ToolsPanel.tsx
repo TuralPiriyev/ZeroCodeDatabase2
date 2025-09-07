@@ -122,11 +122,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
     }
   };
 
-  const groupedTools = tools.reduce((acc, tool) => {
-    if (!acc[tool.category]) acc[tool.category] = [];
-    acc[tool.category].push(tool);
-    return acc;
-  }, {} as Record<string, typeof tools>);
+  // grouping handled inline in rendering using toolCategories
 
   const categoryIcons = {
     design: Database,

@@ -285,13 +285,13 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     try {
       if (schema.isShared) {
         const wsId = (schema as any).workspaceId || (schema as any).workspace?.id || schema.id;
-        try {
-          const doc = yjsCollabService.connect(wsId);
+          try {
+          yjsCollabService.connect(wsId);
           // register a handler to map Y.Doc -> schema JSON if present
           const applyFromYDoc = (d: Y.Doc) => {
             try {
               // Prefer a Y.Map named 'schema' containing JSON or a Text named 'schema'
-              const map = (d.getMap && (d as any).getMap) ? (d as any).getMap('schema') : null;
+              const map = (typeof (d as any).getMap === 'function') ? (d as any).getMap('schema') : null;
               if (map && typeof map.toJSON === 'function') {
                 const maybe = map.toJSON();
                 if (maybe && typeof maybe === 'object' && maybe.tables) {
@@ -300,7 +300,7 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
                 }
               }
               // fallback: check for Text
-              const txt = (d.getText && (d as any).getText) ? (d as any).getText('schema') : null;
+              const txt = (typeof (d as any).getText === 'function') ? (d as any).getText('schema') : null;
               if (txt && txt.toString) {
                 try { const s = JSON.parse(txt.toString()); setCurrentSchema(s); } catch (e) {}
               }
