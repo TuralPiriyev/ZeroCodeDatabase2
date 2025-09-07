@@ -101,23 +101,13 @@ const RealTimeCollaboration: React.FC = () => {
             if (!currentSchema) {
               console.warn('No current schema to share');
             } else {
-              const payload = {
-                schemaId: (currentSchema as any).id || `${Date.now()}`,
-                name: (currentSchema as any).name || 'Shared Schema',
-                scripts: JSON.stringify(currentSchema),
-              };
-              await apiService.post(`/workspaces/${out.id}/schemas`, payload);
+              await import('../../../services/workspaceService').then(m => m.workspaceService.updateSharedSchema(out.id, (currentSchema as any).id || `${Date.now()}`, (currentSchema as any).name || 'Shared Schema', JSON.stringify(currentSchema)));
             }
           } else {
             // treat as portfolio id
             const p = portfolios.find((pt: any) => pt._id === selectedSchemaOption);
             if (p) {
-              const payload = {
-                schemaId: p._id,
-                name: p.name || `Portfolio ${p._id}`,
-                scripts: p.scripts,
-              };
-              await apiService.post(`/workspaces/${out.id}/schemas`, payload);
+              await import('../../../services/workspaceService').then(m => m.workspaceService.updateSharedSchema(out.id, p._id, p.name || `Portfolio ${p._id}`, p.scripts));
             } else {
               console.warn('Selected portfolio not found for sharing during create');
             }
