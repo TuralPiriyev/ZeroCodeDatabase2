@@ -99,7 +99,7 @@ class SimpleWebSocketService {
         });
 
         // forward selected server events to our local handlers
-  ['member_added', 'member_removed', 'member_updated', 'db_update', 'message', 'cursor_update', 'user_joined', 'user_left', 'schema_change', 'schemaUpdated', 'user_selection', 'presence_update', 'workspace_invite', 'workspace-updated'].forEach(evt => {
+  ['member_added', 'member_removed', 'member_updated', 'db_update', 'message', 'cursor_update', 'user_joined', 'user_left', 'schema_change', 'schemaUpdated', 'user_selection', 'presence_update', 'workspace_invite', 'workspace-updated', 'yjs-update', 'yjs-snapshot'].forEach(evt => {
           this.socket?.on(evt, (data: any) => {
             // emit named event for modern listeners
             this.emit(evt, data);
