@@ -211,14 +211,10 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
 
     try {
       console.log('📤 Sharing current schema:', currentSchema.name);
-      
-      const data = await apiService.post(`/workspaces/${workspaceId}/schemas`, {
-        schemaId: currentSchema.id,
-        name: currentSchema.name,
-        scripts: JSON.stringify(currentSchema)
-      });
-
-      console.log('✅ Schema shared successfully:', data);
+  // Use workspaceService which will perform the API upsert and broadcast to workspace members
+  const ok = await workspaceService.updateSharedSchema(workspaceId, currentSchema.id, currentSchema.name, JSON.stringify(currentSchema));
+  if (!ok) throw new Error('Failed to share schema via workspaceService');
+  console.log('✅ Schema shared successfully via workspaceService');
       
       // Refresh workspace to get updated shared schemas
       await loadWorkspace();

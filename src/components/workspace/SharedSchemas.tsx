@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Download, Eye, Clock, AlertCircle, Loader } from 'lucide-react';
 import { apiService } from '../../services/apiService';
+import { workspaceService } from '../../services/workspaceService';
 import { useDatabase } from '../../context/DatabaseContext';
 import { usePortfolio } from '../../context/PortfolioContext';
 import { socketService } from '../../services/socketService';
@@ -108,9 +109,13 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
     if (!isOwner && currentUserRole === 'viewer') return setError('You do not have permission to save to this shared schema');
     setIsLoading(true); setError(null);
     try {
-      const payload = { schemaId: schema.schemaId, name: (currentSchema as any).name || schema.name, scripts: JSON.stringify(currentSchema) };
-      await apiService.post(`/workspaces/${workspaceId}/schemas`, payload);
+      const payloadScripts = JSON.stringify(currentSchema);
+      // Use workspaceService which will broadcast socket updates to other clients
+      const ok = await workspaceService.updateSharedSchema(workspaceId, schema.schemaId, (currentSchema as any).name || schema.name, payloadScripts);
+      if (!ok) throw new Error('Failed to save shared schema via workspaceService');
+      // Refresh lists immediately so UI shows updated shared schema in portfolios
       await loadSharedSchemas();
+      try { await loadPortfolios(); } catch (e) { console.warn('Failed to refresh portfolios after shared save', e); }
     } catch (err) {
       console.error('Failed to save to shared schema:', err);
       setError(err instanceof Error ? err.message : 'Failed to save to shared schema');
@@ -124,12 +129,13 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
   const replaceWithCurrent = async () => {
     if (!currentSchema) return setError('No current schema loaded to share'); setIsLoading(true);
     try {
-      // Always use authoritative schemaId when replacing; prefer selectedSharedSchemaId if present
-      const canonicalId = selectedSharedSchemaId || (currentSchema as any).id || `${Date.now()}`;
-      const payload = { schemaId: canonicalId, name: (currentSchema as any).name || 'Shared Schema', scripts: JSON.stringify(currentSchema) };
-      // Do not send createNew flag for shared schemas
-      await apiService.post(`/workspaces/${workspaceId}/schemas`, payload);
-      await loadSharedSchemas();
+  // Always use authoritative schemaId when replacing; prefer selectedSharedSchemaId if present
+  const canonicalId = selectedSharedSchemaId || (currentSchema as any).id || `${Date.now()}`;
+  const payloadScripts = JSON.stringify(currentSchema);
+  const ok = await workspaceService.updateSharedSchema(workspaceId, canonicalId, (currentSchema as any).name || 'Shared Schema', payloadScripts);
+  if (!ok) throw new Error('Failed to replace shared schema via workspaceService');
+  await loadSharedSchemas();
+  try { await loadPortfolios(); } catch (e) { console.warn('Failed to refresh portfolios after replace', e); }
     } catch (err) {
       console.error('Failed to replace schema:', err);
       setError(err instanceof Error ? err.message : 'Failed to replace schema');
@@ -140,12 +146,14 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
     if (!selectedPortfolioId) return setError('Please select a portfolio schema to share'); const p = portfolios.find(pt => (pt as any)._id === selectedPortfolioId); if (!p) return setError('Selected portfolio not found'); setIsLoading(true);
     try {
       // Use the portfolio id as canonical schemaId so we upsert instead of insert
-      const canonicalId = selectedSharedSchemaId || (p as any)._id;
-      const payload = { schemaId: canonicalId, name: (p as any).name || `Portfolio ${(p as any)._id}`, scripts: (p as any).scripts };
-      await apiService.post(`/workspaces/${workspaceId}/schemas`, payload);
+  const canonicalId = selectedSharedSchemaId || (p as any)._id;
+  const payloadScripts = (p as any).scripts;
+  const ok = await workspaceService.updateSharedSchema(workspaceId, canonicalId, (p as any).name || `Portfolio ${(p as any)._id}`, payloadScripts);
+  if (!ok) throw new Error('Failed to share from portfolio');
       setSelectedPortfolioId(null);
       setSelectedSharedSchemaId(null);
-      await loadSharedSchemas();
+  await loadSharedSchemas();
+  try { await loadPortfolios(); } catch (e) { console.warn('Failed to refresh portfolios after shareFromPortfolio', e); }
     } catch (err) {
       console.error('Failed to share from portfolio:', err);
       setError(err instanceof Error ? err.message : 'Failed to share from portfolio');
@@ -156,11 +164,13 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
     if (!currentSchema) return setError('No current schema loaded to create'); if (!newSchemaName) return setError('Please provide a name'); setIsCreating(true); setError(null);
     try {
       // Creating a new shared schema: generate a canonical id but do not set createNew
-      const canonicalId = (currentSchema as any).id || `${Date.now()}`;
-      const payload = { schemaId: canonicalId, name: newSchemaName, scripts: JSON.stringify(currentSchema) };
-      await apiService.post(`/workspaces/${workspaceId}/schemas`, payload);
+  const canonicalId = (currentSchema as any).id || `${Date.now()}`;
+  const payloadScripts = JSON.stringify(currentSchema);
+  const ok = await workspaceService.updateSharedSchema(workspaceId, canonicalId, newSchemaName, payloadScripts);
+  if (!ok) throw new Error('Failed to create shared schema');
       setNewSchemaName('Shared Schema');
-      await loadSharedSchemas();
+  await loadSharedSchemas();
+  try { await loadPortfolios(); } catch (e) { console.warn('Failed to refresh portfolios after createSharedSchema', e); }
     } catch (err) {
       console.error('Failed to create shared schema:', err);
       setError(err instanceof Error ? err.message : 'Failed to create shared schema');
