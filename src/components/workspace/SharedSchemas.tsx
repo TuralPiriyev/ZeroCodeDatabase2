@@ -22,6 +22,7 @@ interface SharedSchemasProps {
 const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad, currentUserRole = 'viewer' }) => {
   const [schemas, setSchemas] = useState<SharedSchema[]>([]);
   const { portfolios, loadPortfolios } = usePortfolio();
+  const { startPolling: startPortfolioPolling, stopPolling: stopPortfolioPolling } = usePortfolio() as any;
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null);
   const [selectedSharedSchemaId, setSelectedSharedSchemaId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -41,6 +42,26 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
   socketService.on('workspace-updated', handle);
   return () => { socketService.off('db_update', handle); socketService.off('workspace-updated', handle); };
   }, [workspaceId]);
+
+  // Local polling fallback for shared schemas list
+  const pollTimerRef = React.useRef<number | null>(null);
+  const startSharedPolling = (intervalMs: number = 1000) => {
+    try {
+      if (pollTimerRef.current) return;
+      pollTimerRef.current = window.setInterval(() => {
+        loadSharedSchemas().catch(() => {});
+      }, intervalMs) as unknown as number;
+    } catch (e) { console.warn('startSharedPolling failed', e); }
+  };
+  const stopSharedPolling = () => {
+    try {
+      if (pollTimerRef.current) { window.clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+    } catch (e) { console.warn('stopSharedPolling failed', e); }
+  };
+
+  useEffect(() => {
+    return () => { stopSharedPolling(); try { stopPortfolioPolling && stopPortfolioPolling(); } catch (e) {} };
+  }, []);
 
   const loadSharedSchemas = async () => {
     setIsLoading(true); setError(null);
@@ -114,8 +135,10 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
       const ok = await workspaceService.updateSharedSchema(workspaceId, schema.schemaId, (currentSchema as any).name || schema.name, payloadScripts);
       if (!ok) throw new Error('Failed to save shared schema via workspaceService');
       // Refresh lists immediately so UI shows updated shared schema in portfolios
-      await loadSharedSchemas();
-      try { await loadPortfolios(); } catch (e) { console.warn('Failed to refresh portfolios after shared save', e); }
+  await loadSharedSchemas();
+  try { await loadPortfolios(); } catch (e) { console.warn('Failed to refresh portfolios after shared save', e); }
+  // Start short polling fallback for up to 3s to catch eventual updates if socket missed
+  try { startSharedPolling(1000); startPortfolioPolling && startPortfolioPolling(1000); window.setTimeout(() => { stopSharedPolling(); stopPortfolioPolling && stopPortfolioPolling(); }, 3000); } catch (e) {}
     } catch (err) {
       console.error('Failed to save to shared schema:', err);
       setError(err instanceof Error ? err.message : 'Failed to save to shared schema');
@@ -136,6 +159,7 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
   if (!ok) throw new Error('Failed to replace shared schema via workspaceService');
   await loadSharedSchemas();
   try { await loadPortfolios(); } catch (e) { console.warn('Failed to refresh portfolios after replace', e); }
+  try { startSharedPolling(1000); startPortfolioPolling && startPortfolioPolling(1000); window.setTimeout(() => { stopSharedPolling(); stopPortfolioPolling && stopPortfolioPolling(); }, 3000); } catch (e) {}
     } catch (err) {
       console.error('Failed to replace schema:', err);
       setError(err instanceof Error ? err.message : 'Failed to replace schema');
@@ -154,6 +178,7 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
       setSelectedSharedSchemaId(null);
   await loadSharedSchemas();
   try { await loadPortfolios(); } catch (e) { console.warn('Failed to refresh portfolios after shareFromPortfolio', e); }
+  try { startSharedPolling(1000); startPortfolioPolling && startPortfolioPolling(1000); window.setTimeout(() => { stopSharedPolling(); stopPortfolioPolling && stopPortfolioPolling(); }, 3000); } catch (e) {}
     } catch (err) {
       console.error('Failed to share from portfolio:', err);
       setError(err instanceof Error ? err.message : 'Failed to share from portfolio');
@@ -171,6 +196,7 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
       setNewSchemaName('Shared Schema');
   await loadSharedSchemas();
   try { await loadPortfolios(); } catch (e) { console.warn('Failed to refresh portfolios after createSharedSchema', e); }
+  try { startSharedPolling(1000); startPortfolioPolling && startPortfolioPolling(1000); window.setTimeout(() => { stopSharedPolling(); stopPortfolioPolling && stopPortfolioPolling(); }, 3000); } catch (e) {}
     } catch (err) {
       console.error('Failed to create shared schema:', err);
       setError(err instanceof Error ? err.message : 'Failed to create shared schema');

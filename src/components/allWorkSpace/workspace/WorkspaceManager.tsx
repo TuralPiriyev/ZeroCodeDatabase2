@@ -3,6 +3,7 @@ import { Database, Users, Share2, Loader, AlertCircle, Wifi, WifiOff } from 'luc
 import { useDatabase } from '../../../context/DatabaseContext';
 import { useAuth } from '../../../context/AuthContext';
 import { apiService } from '../../../services/apiService';
+import { workspaceService } from '../../../services/workspaceService';
 import { socketService } from '../../../services/socketService';
 import { collaborationService } from '../../../services/collaborationService';
 import InvitationForm from '../../workspace/InvitationForm';
