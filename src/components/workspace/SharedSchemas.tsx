@@ -21,8 +21,8 @@ interface SharedSchemasProps {
 
 const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad, currentUserRole = 'viewer' }) => {
   const [schemas, setSchemas] = useState<SharedSchema[]>([]);
-  const { portfolios, loadPortfolios } = usePortfolio();
-  const { startPolling: startPortfolioPolling, stopPolling: stopPortfolioPolling } = usePortfolio() as any;
+  const portfolioCtx = usePortfolio();
+  const { portfolios, loadPortfolios, startPolling: startPortfolioPolling, stopPolling: stopPortfolioPolling } = portfolioCtx as any;
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string | null>(null);
   const [selectedSharedSchemaId, setSelectedSharedSchemaId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -35,12 +35,40 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
   const { getCurrentUser } = useAuth();
 
   useEffect(() => {
-    loadSharedSchemas();
-    loadPortfolios().catch(e => console.warn('Failed to load portfolios for SharedSchemas', e));
-    const handle = () => loadSharedSchemas();
-  socketService.on('db_update', handle);
-  socketService.on('workspace-updated', handle);
-  return () => { socketService.off('db_update', handle); socketService.off('workspace-updated', handle); };
+    let mounted = true;
+    let joinedHere = false;
+
+    const init = async () => {
+      try {
+        // Ensure socket is connected and joined to the workspace room so we receive events
+        await socketService.connect(workspaceId).catch(() => {});
+        try {
+          // joinWorkspace is idempotent; track whether we explicitly joined here so cleanup doesn't stomp other joiners
+          socketService.joinWorkspace(workspaceId);
+          joinedHere = true;
+        } catch (e) {}
+
+        if (!mounted) return;
+        await loadSharedSchemas();
+        await loadPortfolios().catch(e => console.warn('Failed to load portfolios for SharedSchemas', e));
+      } catch (e) {
+        console.warn('SharedSchemas:init failed', e);
+      }
+    };
+
+    init();
+
+    const handle = () => { if (mounted) loadSharedSchemas().catch(() => {}); };
+    socketService.on('db_update', handle);
+    socketService.on('workspace-updated', handle);
+
+    return () => {
+      mounted = false;
+      try { socketService.off('db_update', handle); } catch (e) {}
+      try { socketService.off('workspace-updated', handle); } catch (e) {}
+      // Only leave if this component explicitly joined the workspace
+      try { if (joinedHere) socketService.leaveWorkspace(); } catch (e) {}
+    };
   }, [workspaceId]);
 
   // Local polling fallback for shared schemas list
