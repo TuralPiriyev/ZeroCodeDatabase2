@@ -4,6 +4,8 @@ import initSqlJs from 'sql.js';
 import { v4 as uuidv4 } from 'uuid';
 import {mongoService} from '../services/mongoService'
 import { collaborationService } from '../services/collaborationService';
+import { yjsCollabService } from '../services/yjsCollabService';
+import * as Y from 'yjs';
 import { apiService } from '../services/apiService';
 import { simpleWebSocketService } from '../services/simpleWebSocketService';
 
@@ -279,6 +281,42 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       setCurrentSchema(schema);
     }
     
+    // If this is a shared schema, connect Yjs collab service to receive live updates
+    try {
+      if (schema.isShared) {
+        const wsId = (schema as any).workspaceId || (schema as any).workspace?.id || schema.id;
+        try {
+          const doc = yjsCollabService.connect(wsId);
+          // register a handler to map Y.Doc -> schema JSON if present
+          const applyFromYDoc = (d: Y.Doc) => {
+            try {
+              // Prefer a Y.Map named 'schema' containing JSON or a Text named 'schema'
+              const map = (d.getMap && (d as any).getMap) ? (d as any).getMap('schema') : null;
+              if (map && typeof map.toJSON === 'function') {
+                const maybe = map.toJSON();
+                if (maybe && typeof maybe === 'object' && maybe.tables) {
+                  setCurrentSchema(maybe as Schema);
+                  return;
+                }
+              }
+              // fallback: check for Text
+              const txt = (d.getText && (d as any).getText) ? (d as any).getText('schema') : null;
+              if (txt && txt.toString) {
+                try { const s = JSON.parse(txt.toString()); setCurrentSchema(s); } catch (e) {}
+              }
+            } catch (e) {
+              console.warn('Failed to apply Y.Doc to schema', e);
+            }
+          };
+          yjsCollabService.onUpdate(wsId, applyFromYDoc);
+        } catch (e) {
+          console.warn('Failed to connect yjsCollabService for schema import:', e);
+        }
+      }
+    } catch (e) {
+      console.warn('yjs integration skipped due to error', e);
+    }
+
     // Recreate tables and relationships in SQL engine
     if (sqlEngine) {
       try {
@@ -353,6 +391,33 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       }
     }
   }, [sqlEngine]);
+
+  // Push currentSchema into Yjs document for live collaboration (if shared)
+  useEffect(() => {
+    try {
+      if (!currentSchema || !currentSchema.isShared) return;
+      const wsId = (currentSchema as any).workspaceId || (currentSchema as any).workspace?.id || currentSchema.id;
+      if (!wsId) return;
+      const doc = yjsCollabService.getDoc(wsId) || yjsCollabService.connect(wsId);
+      if (!doc) return;
+      // write schema JSON into a Y.Map named 'schema'
+      const map = (doc as any).getMap ? (doc as any).getMap('schema') : null;
+      const json = JSON.parse(JSON.stringify(currentSchema));
+      if (map && typeof map.set === 'function') {
+        // overwrite keys to keep map in sync
+        Object.keys(json).forEach(k => map.set(k, json[k]));
+      } else if ((doc as any).getText) {
+        const txt = (doc as any).getText('schema');
+        txt.delete(0, txt.length);
+        txt.insert(0, JSON.stringify(json));
+      }
+      // Broadcast update: compute update from Yjs and send
+      const update = Y.encodeStateAsUpdate(doc);
+      yjsCollabService.sendUpdate(wsId, update);
+    } catch (e) {
+      console.warn('Failed to push currentSchema into Yjs doc', e);
+    }
+  }, [currentSchema]);
 
   // Listen specifically for db_update messages carrying a persisted schema
   useEffect(() => {
