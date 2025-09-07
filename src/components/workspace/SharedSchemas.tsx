@@ -50,7 +50,7 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
 
         if (!mounted) return;
         await loadSharedSchemas();
-        await loadPortfolios().catch(e => console.warn('Failed to load portfolios for SharedSchemas', e));
+  await loadPortfolios().catch((e: any) => console.warn('Failed to load portfolios for SharedSchemas', e));
       } catch (e) {
         console.warn('SharedSchemas:init failed', e);
       }
@@ -58,7 +58,7 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
 
     init();
 
-    const handle = () => { if (mounted) loadSharedSchemas().catch(() => {}); };
+  const handle = () => { if (mounted) loadSharedSchemas().catch(() => {}); };
     socketService.on('db_update', handle);
     socketService.on('workspace-updated', handle);
 
@@ -195,7 +195,7 @@ const SharedSchemas: React.FC<SharedSchemasProps> = ({ workspaceId, onSchemaLoad
   };
 
   const shareFromPortfolio = async () => {
-    if (!selectedPortfolioId) return setError('Please select a portfolio schema to share'); const p = portfolios.find(pt => (pt as any)._id === selectedPortfolioId); if (!p) return setError('Selected portfolio not found'); setIsLoading(true);
+    if (!selectedPortfolioId) return setError('Please select a portfolio schema to share'); const p = portfolios.find((pt: any) => (pt as any)._id === selectedPortfolioId); if (!p) return setError('Selected portfolio not found'); setIsLoading(true);
     try {
       // Use the portfolio id as canonical schemaId so we upsert instead of insert
   const canonicalId = selectedSharedSchemaId || (p as any)._id;
