@@ -32,23 +32,13 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
   const { currentPlan } = useSubscription(); // Added subscription hook
   const [activeTool, setActiveTool] = useState<ActiveTool>('enhanced_table');
 
-  // Tool categories for better organization
-  const toolCategories = {
-    'Schema Design': ['enhanced_table', 'relationships'],
-    'Data Management': ['query_builder', 'crud_builder'],
-    'Validation': ['sql_validator'],
-    'Development': ['live_sql'],
-    'Import/Export': ['smart_export'],
-    'Collaboration': ['collaboration']
-  };
-
   const tools = [
     {
       id: 'enhanced_table' as const,
       name: 'Advanced Tables',
       icon: Database,
       description: 'Create tables with FK validation',
-      category: 'design',
+      category: 'Schema Design',
       requiresPlan: 'free' as const
     },
     {
@@ -56,7 +46,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
       name: 'Relationships',
       icon: Link,
       description: 'Manage table relationships',
-      category: 'design',
+      category: 'Schema Design',
       requiresPlan: 'free' as const
     },
     {
@@ -64,7 +54,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
       name: 'Query Builder',
       icon: Search,
       description: 'Visual query construction',
-      category: 'data',
+      category: 'Data Management',
       requiresPlan: 'free' as const
     },
     {
@@ -72,7 +62,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
       name: 'Data Manager',
       icon: FileText,
       description: 'CRUD operations',
-      category: 'data',
+      category: 'Data Management',
       requiresPlan: 'free' as const
     },
     {
@@ -80,7 +70,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
       name: 'SQL Validator',
       icon: AlertTriangle,
       description: 'Schema validation & audit',
-      category: 'validation',
+      category: 'Validation',
       requiresPlan: 'pro' as const
     },
     {
@@ -88,7 +78,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
       name: 'Live SQL',
       icon: Code,
       description: 'Real-time SQL editor',
-      category: 'development',
+      category: 'Development',
       requiresPlan: 'pro' as const
     },
     {
@@ -96,7 +86,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
       name: 'Smart Export',
       icon: Download,
       description: 'Advanced export options',
-      category: 'export',
+      category: 'Import/Export',
       requiresPlan: 'pro' as const
     },
     {
@@ -104,7 +94,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
       name: 'Collaboration',
       icon: Users,
       description: 'Real-time team features',
-      category: 'collaboration',
+      category: 'Collaboration',
       requiresPlan: 'ultimate' as const
     }
   ];
@@ -122,28 +112,20 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
     }
   };
 
-  const groupedTools = tools.reduce((acc, tool) => {
+  // Group tools by category
+  const toolsByCategory = tools.reduce((acc, tool) => {
     if (!acc[tool.category]) acc[tool.category] = [];
     acc[tool.category].push(tool);
     return acc;
   }, {} as Record<string, typeof tools>);
 
-  const categoryIcons = {
-    design: Database,
-    data: FileText,
-    validation: AlertTriangle,
-    development: Code,
-    export: Download,
-    collaboration: Users
-  };
-
-  const categoryColors = {
-    design: 'text-blue-600 dark:text-blue-400',
-    data: 'text-green-600 dark:text-green-400',
-    validation: 'text-yellow-600 dark:text-yellow-400',
-    development: 'text-purple-600 dark:text-purple-400',
-    export: 'text-indigo-600 dark:text-indigo-400',
-    collaboration: 'text-pink-600 dark:text-pink-400'
+  const categoryConfig = {
+    'Schema Design': { icon: Database, color: 'text-blue-600 dark:text-blue-400', bgColor: 'bg-blue-50 dark:bg-blue-900/20' },
+    'Data Management': { icon: FileText, color: 'text-green-600 dark:text-green-400', bgColor: 'bg-green-50 dark:bg-green-900/20' },
+    'Validation': { icon: AlertTriangle, color: 'text-yellow-600 dark:text-yellow-400', bgColor: 'bg-yellow-50 dark:bg-yellow-900/20' },
+    'Development': { icon: Code, color: 'text-purple-600 dark:text-purple-400', bgColor: 'bg-purple-50 dark:bg-purple-900/20' },
+    'Import/Export': { icon: Download, color: 'text-indigo-600 dark:text-indigo-400', bgColor: 'bg-indigo-50 dark:bg-indigo-900/20' },
+    'Collaboration': { icon: Users, color: 'text-pink-600 dark:text-pink-400', bgColor: 'bg-pink-50 dark:bg-pink-900/20' }
   };
 
   return (
@@ -155,21 +137,29 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
             Advanced Tools
           </h3>
           
-          {/* Organized Tool Categories */}
-          <div className="space-y-4">
-            {Object.entries(toolCategories).map(([categoryName, toolIds]) => {
-              const categoryTools = tools.filter(tool => toolIds.includes(tool.id));
-              const CategoryIcon = categoryIcons[categoryName.toLowerCase().replace(/[^a-z]/g, '') as keyof typeof categoryIcons] || Database;
-              const categoryColor = categoryColors[categoryName.toLowerCase().replace(/[^a-z]/g, '') as keyof typeof categoryColors] || 'text-gray-600 dark:text-gray-400';
+          {/* Beautiful Tool Categories Grid */}
+          <div className="space-y-6">
+            {Object.entries(toolsByCategory).map(([categoryName, categoryTools]) => {
+              const config = categoryConfig[categoryName as keyof typeof categoryConfig];
+              const CategoryIcon = config?.icon || Database;
+              const categoryColor = config?.color || 'text-gray-600 dark:text-gray-400';
+              const categoryBgColor = config?.bgColor || 'bg-gray-50 dark:bg-gray-900/20';
               
               return (
-                <div key={categoryName} className="space-y-2">
-                  <div className={`flex items-center gap-2 text-sm font-medium ${categoryColor}`}>
-                    <CategoryIcon className="w-4 h-4" />
-                    <span>{categoryName}</span>
+                <div key={categoryName} className="space-y-3">
+                  {/* Category Header */}
+                  <div className={`flex items-center gap-3 p-3 rounded-xl ${categoryBgColor} border border-gray-200 dark:border-gray-700`}>
+                    <div className={`w-8 h-8 rounded-lg bg-white dark:bg-gray-800 flex items-center justify-center shadow-sm`}>
+                      <CategoryIcon className={`w-4 h-4 ${categoryColor}`} />
+                    </div>
+                    <div>
+                      <h4 className={`font-semibold text-sm ${categoryColor}`}>{categoryName}</h4>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{categoryTools.length} tools available</p>
+                    </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 gap-2">
+                  {/* Tools Grid - 2 columns for better layout */}
+                  <div className="grid grid-cols-2 gap-3">
                     {categoryTools.map(tool => {
                       const Icon = tool.icon;
                       const isAvailable = getToolAvailability(tool);
@@ -181,35 +171,55 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
                           onClick={() => isAvailable && setActiveTool(tool.id)}
                           disabled={!isAvailable}
                           className={`
-                            flex items-center gap-3 p-3 rounded-lg text-left transition-all duration-200
+                            group relative flex flex-col items-center gap-2 p-4 rounded-xl text-center transition-all duration-300 transform hover:scale-105
                             ${isActive && isAvailable
-                              ? 'bg-sky-50 dark:bg-sky-900/20 border-2 border-sky-500 text-sky-700 dark:text-sky-300'
+                              ? 'bg-gradient-to-br from-sky-50 to-blue-50 dark:from-sky-900/30 dark:to-blue-900/30 border-2 border-sky-400 shadow-lg shadow-sky-200 dark:shadow-sky-900/50'
                               : isAvailable
-                              ? 'bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border-2 border-transparent'
-                              : 'bg-gray-100 dark:bg-gray-700 opacity-50 cursor-not-allowed border-2 border-transparent'
+                              ? 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 shadow-sm hover:shadow-md'
+                              : 'bg-gray-100 dark:bg-gray-700 opacity-50 cursor-not-allowed border-2 border-gray-200 dark:border-gray-600'
                             }
                           `}
                         >
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                          {/* Tool Icon */}
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${
                             isActive && isAvailable
-                              ? 'bg-sky-100 dark:bg-sky-800'
-                              : 'bg-white dark:bg-gray-600'
+                              ? 'bg-sky-500 text-white shadow-lg'
+                              : isAvailable
+                              ? 'bg-gray-100 dark:bg-gray-600 group-hover:bg-gray-200 dark:group-hover:bg-gray-500'
+                              : 'bg-gray-200 dark:bg-gray-600'
                           }`}>
-                            <Icon className="w-4 h-4" />
+                            <Icon className={`w-5 h-5 ${
+                              isActive && isAvailable 
+                                ? 'text-white' 
+                                : isAvailable 
+                                ? 'text-gray-600 dark:text-gray-300' 
+                                : 'text-gray-400'
+                            }`} />
                           </div>
                           
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm">{tool.name}</span>
-                              {!isAvailable && (
-                                <span className="text-xs bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 px-2 py-1 rounded">
-                                  {tool.requiresPlan === 'pro' ? 'Pro' : 'Ultimate'}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                              {tool.description}
-                            </div>
+                          {/* Tool Name */}
+                          <div className="min-w-0 w-full">
+                            <h5 className={`font-semibold text-xs leading-tight mb-1 ${
+                              isActive && isAvailable
+                                ? 'text-sky-700 dark:text-sky-300'
+                                : isAvailable
+                                ? 'text-gray-800 dark:text-gray-200'
+                                : 'text-gray-500 dark:text-gray-400'
+                            }`}>
+                              {tool.name}
+                            </h5>
+                            
+                            {/* Plan Badge */}
+                            {!isAvailable && (
+                              <span className="inline-block text-xs bg-gradient-to-r from-yellow-400 to-orange-400 text-white px-2 py-1 rounded-full font-medium shadow-sm">
+                                {tool.requiresPlan === 'pro' ? 'Pro' : 'Ultimate'}
+                              </span>
+                            )}
+                            
+                            {/* Active Indicator */}
+                            {isActive && isAvailable && (
+                              <div className="absolute -top-1 -right-1 w-3 h-3 bg-sky-500 rounded-full border-2 border-white dark:border-gray-800 shadow-sm"></div>
+                            )}
                           </div>
                         </button>
                       );
@@ -223,7 +233,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
       </div>
 
       {/* Active Tool Content */}
-      <div className={`flex-1 overflow-hidden ${collapsed ? 'hidden' : ''}`}>
+      <div className={`flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900/50 ${collapsed ? 'hidden' : ''}`}>
         {activeTool === 'enhanced_table' && <EnhancedTableBuilder />}
         {activeTool === 'relationships' && <RelationshipPanel />}
         {activeTool === 'query_builder' && <VisualQueryBuilder />}
@@ -236,8 +246,11 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
         {!activeTool && (
           <div className="h-full flex items-center justify-center p-6">
             <div className="text-center">
-              <Settings className="w-12 h-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
-              <p className="text-gray-500 dark:text-gray-400 text-sm">
+              <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
+                <Settings className="w-8 h-8 text-gray-400 dark:text-gray-500" />
+              </div>
+              <h4 className="font-medium text-gray-700 dark:text-gray-300 mb-2">Select a Tool</h4>
+              <p className="text-gray-500 dark:text-gray-400 text-sm max-w-48">
                 Select a tool to get started
               </p>
             </div>
@@ -247,7 +260,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
 
       {/* Collapsed State - Show only icons */}
       {collapsed && (
-        <div className="flex flex-col items-center py-4 space-y-3">
+        <div className="flex flex-col items-center py-4 space-y-4">
           {tools.slice(0, 6).map(tool => {
             const Icon = tool.icon;
             const isAvailable = getToolAvailability(tool);
@@ -259,17 +272,23 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
                 onClick={() => isAvailable && setActiveTool(tool.id)}
                 disabled={!isAvailable}
                 className={`
-                  w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-200
+                  relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 transform hover:scale-110
                   ${isActive && isAvailable
-                    ? 'bg-sky-100 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400'
+                    ? 'bg-sky-500 text-white shadow-lg shadow-sky-200 dark:shadow-sky-900/50'
                     : isAvailable
-                    ? 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400'
-                    : 'opacity-50 cursor-not-allowed text-gray-400'
+                    ? 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-400'
+                    : 'bg-gray-100 dark:bg-gray-700 opacity-50 cursor-not-allowed text-gray-400'
                   }
                 `}
                 title={tool.name}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-5 h-5" />
+                {isActive && isAvailable && (
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-sky-400 rounded-full border-2 border-white dark:border-gray-900"></div>
+                )}
+                {!isAvailable && (
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full border-2 border-white dark:border-gray-900"></div>
+                )}
               </button>
             );
           })}
@@ -277,16 +296,37 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
       )}
 
       {/* Plan Status */}
-      <div className={`border-t border-gray-200 dark:border-gray-700 p-4 ${collapsed ? 'hidden' : ''}`}>
-        <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-gray-500" />
-            <span className="text-gray-600 dark:text-gray-400">
-              Current Plan: <span className="font-medium capitalize">{currentPlan}</span>
-            </span>
-          </div>
-          <div className="text-gray-500 dark:text-gray-400">
-            {tools.filter(t => getToolAvailability(t)).length}/{tools.length} tools available
+      <div className={`border-t border-gray-200 dark:border-gray-700 p-4 bg-gradient-to-r from-gray-50 to-blue-50 dark:from-gray-800 dark:to-blue-900/20 ${collapsed ? 'hidden' : ''}`}>
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-100 to-purple-100 dark:from-blue-900 dark:to-purple-900 rounded-lg flex items-center justify-center">
+                <Activity className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                  Current Plan: <span className="text-blue-600 dark:text-blue-400 capitalize">{currentPlan}</span>
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  {tools.filter(t => getToolAvailability(t)).length} of {tools.length} tools available
+                </div>
+              </div>
+            </div>
+            
+            {/* Plan Progress Bar */}
+            <div className="flex items-center gap-2">
+              <div className="w-20 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500"
+                  style={{ 
+                    width: `${(tools.filter(t => getToolAvailability(t)).length / tools.length) * 100}%` 
+                  }}
+                />
+              </div>
+              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                {Math.round((tools.filter(t => getToolAvailability(t)).length / tools.length) * 100)}%
+              </span>
+            </div>
           </div>
         </div>
       </div>
