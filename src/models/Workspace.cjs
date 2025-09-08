@@ -59,7 +59,6 @@ const WorkspaceSchema = new Schema({
 });
 
 // Indexes for performance
-WorkspaceSchema.index({ id: 1 });
 WorkspaceSchema.index({ ownerId: 1 });
 WorkspaceSchema.index({ isActive: 1 });
 
