@@ -107,9 +107,9 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
   return (
     <div className={`h-full flex flex-col bg-white dark:bg-gray-900 transition-all duration-300 ${collapsed ? 'overflow-hidden' : ''}`}>
       
-      {/* Horizontal Tabs - Minimal və gözəl */}
-      <div className={`border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-blue-50 dark:from-gray-800 dark:to-blue-900/20 ${collapsed ? 'hidden' : ''}`}>
-        <div className="flex overflow-x-auto scrollbar-hide px-2 py-1">
+      {/* Horizontal Tabs - Navbar-dan uzaq və kiçik */}
+      <div className={`mt-4 mx-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-blue-50 dark:from-gray-800 dark:to-blue-900/20 rounded-t-lg ${collapsed ? 'hidden' : ''}`}>
+        <div className="flex overflow-x-auto scrollbar-hide px-1 py-1">
           {tools.map(tool => {
             const Icon = tool.icon;
             const isAvailable = getToolAvailability(tool);
@@ -121,27 +121,27 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
                 onClick={() => isAvailable && setActiveTool(tool.id)}
                 disabled={!isAvailable}
                 className={`
-                  group relative flex items-center gap-3 px-6 py-4 text-sm font-medium whitespace-nowrap 
-                  border-b-3 transition-all duration-300 min-w-fit mx-1 rounded-t-xl
+                  group relative flex items-center gap-2 px-3 py-2 text-xs font-medium whitespace-nowrap 
+                  border-b-2 transition-all duration-300 min-w-fit mx-0.5 rounded-t-lg
                   ${isActive && isAvailable
-                    ? `border-transparent bg-gradient-to-r ${tool.color} text-white shadow-lg transform scale-105`
+                    ? `border-transparent bg-gradient-to-r ${tool.color} text-white shadow-md transform scale-102`
                     : isAvailable
-                    ? 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-white dark:hover:bg-gray-800 hover:shadow-md hover:scale-102'
+                    ? 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-white dark:hover:bg-gray-800 hover:shadow-sm hover:scale-101'
                     : 'border-transparent text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-60'
                   }
                 `}
               >
-                <div className={`p-2 rounded-lg transition-all duration-300 ${
+                <div className={`p-1.5 rounded-md transition-all duration-300 ${
                   isActive && isAvailable 
                     ? 'bg-white/20 backdrop-blur-sm' 
                     : 'bg-gray-100 dark:bg-gray-700 group-hover:bg-gray-200 dark:group-hover:bg-gray-600'
                 }`}>
-                  <Icon className="w-5 h-5" />
+                  <Icon className="w-4 h-4" />
                 </div>
                 <div className="flex flex-col items-start">
-                  <span className="font-semibold">{tool.name}</span>
+                  <span className="font-medium text-xs">{tool.name}</span>
                   {!isAvailable && (
-                    <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-0.5 rounded-full font-bold">
+                    <span className="text-xs bg-yellow-400 text-yellow-900 px-1.5 py-0.5 rounded-full font-medium">
                       {tool.requiresPlan === 'pro' ? 'Pro' : 'Ultimate'}
                     </span>
                   )}
@@ -149,7 +149,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
                 
                 {/* Active indicator */}
                 {isActive && isAvailable && (
-                  <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-2 h-2 bg-white rounded-full shadow-lg"></div>
+                  <div className="absolute -bottom-0.5 left-1/2 transform -translate-x-1/2 w-1.5 h-1.5 bg-white rounded-full shadow-md"></div>
                 )}
               </button>
             );
@@ -157,19 +157,19 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
         </div>
       </div>
 
-      {/* Tool Content - Scrollable və gözəl */}
+      {/* Tool Content - Scrollable və kompakt */}
       <div className={`flex-1 overflow-y-auto bg-gradient-to-br from-gray-50 to-blue-50/30 dark:from-gray-900 dark:to-blue-900/10 ${collapsed ? 'hidden' : ''}`}>
-        <div className="p-6">
+        <div className="p-4">
           {activeTool === 'ddl_builder' && (
-            <div className="space-y-6">
-              <div className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white p-6 rounded-2xl shadow-xl">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                    <Database className="w-6 h-6" />
+            <div className="space-y-4">
+              <div className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white p-4 rounded-xl shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                    <Database className="w-4 h-4" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold">DDL Builder</h2>
-                    <p className="text-blue-100">Create and manage database tables visually</p>
+                    <h2 className="text-lg font-bold">DDL Builder</h2>
+                    <p className="text-blue-100 text-sm">Create and manage database tables visually</p>
                   </div>
                 </div>
               </div>
@@ -178,15 +178,15 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'data_manager' && (
-            <div className="space-y-6">
-              <div className="bg-gradient-to-r from-green-500 to-emerald-500 text-white p-6 rounded-2xl shadow-xl">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                    <FileText className="w-6 h-6" />
+            <div className="space-y-4">
+              <div className="bg-gradient-to-r from-green-500 to-emerald-500 text-white p-4 rounded-xl shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                    <FileText className="w-4 h-4" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold">Data Manager</h2>
-                    <p className="text-green-100">Manage your table data with CRUD operations</p>
+                    <h2 className="text-lg font-bold">Data Manager</h2>
+                    <p className="text-green-100 text-sm">Manage your table data with CRUD operations</p>
                   </div>
                 </div>
               </div>
@@ -195,15 +195,15 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'query_builder' && (
-            <div className="space-y-6">
-              <div className="bg-gradient-to-r from-purple-500 to-violet-500 text-white p-6 rounded-2xl shadow-xl">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                    <Search className="w-6 h-6" />
+            <div className="space-y-4">
+              <div className="bg-gradient-to-r from-purple-500 to-violet-500 text-white p-4 rounded-xl shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                    <Search className="w-4 h-4" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold">Query Builder</h2>
-                    <p className="text-purple-100">Build complex queries visually</p>
+                    <h2 className="text-lg font-bold">Query Builder</h2>
+                    <p className="text-purple-100 text-sm">Build complex queries visually</p>
                   </div>
                 </div>
               </div>
@@ -212,15 +212,15 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'relationships' && (
-            <div className="space-y-6">
-              <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white p-6 rounded-2xl shadow-xl">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                    <Link className="w-6 h-6" />
+            <div className="space-y-4">
+              <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white p-4 rounded-xl shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                    <Link className="w-4 h-4" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold">Relationships</h2>
-                    <p className="text-orange-100">Define connections between tables</p>
+                    <h2 className="text-lg font-bold">Relationships</h2>
+                    <p className="text-orange-100 text-sm">Define connections between tables</p>
                   </div>
                 </div>
               </div>
@@ -229,15 +229,15 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'team_collaboration' && (
-            <div className="space-y-6">
-              <div className="bg-gradient-to-r from-pink-500 to-rose-500 text-white p-6 rounded-2xl shadow-xl">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                    <Users className="w-6 h-6" />
+            <div className="space-y-4">
+              <div className="bg-gradient-to-r from-pink-500 to-rose-500 text-white p-4 rounded-xl shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                    <Users className="w-4 h-4" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold">Team Collaboration</h2>
-                    <p className="text-pink-100">Work together in real-time</p>
+                    <h2 className="text-lg font-bold">Team Collaboration</h2>
+                    <p className="text-pink-100 text-sm">Work together in real-time</p>
                   </div>
                 </div>
               </div>
@@ -246,15 +246,15 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'sql_validator' && (
-            <div className="space-y-6">
-              <div className="bg-gradient-to-r from-yellow-500 to-amber-500 text-white p-6 rounded-2xl shadow-xl">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                    <AlertTriangle className="w-6 h-6" />
+            <div className="space-y-4">
+              <div className="bg-gradient-to-r from-yellow-500 to-amber-500 text-white p-4 rounded-xl shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                    <AlertTriangle className="w-4 h-4" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold">SQL Validator</h2>
-                    <p className="text-yellow-100">Validate and optimize your schema</p>
+                    <h2 className="text-lg font-bold">SQL Validator</h2>
+                    <p className="text-yellow-100 text-sm">Validate and optimize your schema</p>
                   </div>
                 </div>
               </div>
@@ -263,15 +263,15 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'live_sql' && (
-            <div className="space-y-6">
-              <div className="bg-gradient-to-r from-indigo-500 to-blue-500 text-white p-6 rounded-2xl shadow-xl">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                    <Code className="w-6 h-6" />
+            <div className="space-y-4">
+              <div className="bg-gradient-to-r from-indigo-500 to-blue-500 text-white p-4 rounded-xl shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                    <Code className="w-4 h-4" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold">Live SQL Editor</h2>
-                    <p className="text-indigo-100">Write and execute SQL in real-time</p>
+                    <h2 className="text-lg font-bold">Live SQL Editor</h2>
+                    <p className="text-indigo-100 text-sm">Write and execute SQL in real-time</p>
                   </div>
                 </div>
               </div>
@@ -280,15 +280,15 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'smart_export' && (
-            <div className="space-y-6">
-              <div className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white p-6 rounded-2xl shadow-xl">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                    <Download className="w-6 h-6" />
+            <div className="space-y-4">
+              <div className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white p-4 rounded-xl shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
+                    <Download className="w-4 h-4" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold">Smart Export</h2>
-                    <p className="text-teal-100">Export your schema to multiple formats</p>
+                    <h2 className="text-lg font-bold">Smart Export</h2>
+                    <p className="text-teal-100 text-sm">Export your schema to multiple formats</p>
                   </div>
                 </div>
               </div>
@@ -299,11 +299,11 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           {!activeTool && (
             <div className="h-full flex items-center justify-center">
               <div className="text-center">
-                <div className="w-24 h-24 bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg">
-                  <Settings className="w-12 h-12 text-gray-400 dark:text-gray-500" />
+                <div className="w-16 h-16 bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-md">
+                  <Settings className="w-8 h-8 text-gray-400 dark:text-gray-500" />
                 </div>
-                <h4 className="text-xl font-bold text-gray-700 dark:text-gray-300 mb-3">Select a Tool</h4>
-                <p className="text-gray-500 dark:text-gray-400">
+                <h4 className="text-lg font-bold text-gray-700 dark:text-gray-300 mb-2">Select a Tool</h4>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">
                   Choose a tool from the tabs above to get started
                 </p>
               </div>
@@ -314,7 +314,7 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
 
       {/* Collapsed State - Vertical Icons */}
       {collapsed && (
-        <div className="flex flex-col items-center py-6 space-y-4">
+        <div className="flex flex-col items-center py-4 space-y-3">
           {tools.slice(0, 6).map(tool => {
             const Icon = tool.icon;
             const isAvailable = getToolAvailability(tool);
@@ -326,22 +326,22 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
                 onClick={() => isAvailable && setActiveTool(tool.id)}
                 disabled={!isAvailable}
                 className={`
-                  relative w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 transform hover:scale-110 shadow-lg
+                  relative w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 transform hover:scale-110 shadow-md
                   ${isActive && isAvailable
-                    ? `bg-gradient-to-r ${tool.color} text-white shadow-xl scale-110`
+                    ? `bg-gradient-to-r ${tool.color} text-white shadow-lg scale-105`
                     : isAvailable
-                    ? 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 hover:shadow-xl'
+                    ? 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 hover:shadow-lg'
                     : 'bg-gray-100 dark:bg-gray-700 opacity-50 cursor-not-allowed text-gray-400'
                   }
                 `}
                 title={tool.name}
               >
-                <Icon className="w-6 h-6" />
+                <Icon className="w-5 h-5" />
                 {isActive && isAvailable && (
-                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-white rounded-full border-2 border-current shadow-lg"></div>
+                  <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-white rounded-full border-2 border-current shadow-md"></div>
                 )}
                 {!isAvailable && (
-                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full border-2 border-white dark:border-gray-900 shadow-lg"></div>
+                  <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-yellow-400 rounded-full border-2 border-white dark:border-gray-900 shadow-md"></div>
                 )}
               </button>
             );
@@ -349,32 +349,32 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
         </div>
       )}
 
-      {/* Plan Status - Gözəl və minimal */}
-      <div className={`border-t border-gray-200 dark:border-gray-700 p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-gray-800 dark:to-purple-900/20 ${collapsed ? 'hidden' : ''}`}>
+      {/* Plan Status - Kompakt və minimal */}
+      <div className={`border-t border-gray-200 dark:border-gray-700 p-3 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-gray-800 dark:to-purple-900/20 ${collapsed ? 'hidden' : ''}`}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center shadow-lg">
-              <Activity className="w-4 h-4 text-white" />
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-500 rounded-md flex items-center justify-center shadow-md">
+              <Activity className="w-3 h-3 text-white" />
             </div>
             <div>
-              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
                 Current Plan: <span className="text-blue-600 dark:text-blue-400 capitalize">{currentPlan}</span>
               </span>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
+              <div className="text-xs text-gray-500 dark:text-gray-400 text-xs">
                 {tools.filter(t => getToolAvailability(t)).length}/{tools.length} tools available
               </div>
             </div>
           </div>
           
           {/* Progress indicator */}
-          <div className="flex items-center gap-2">
-            <div className="w-20 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+          <div className="flex items-center gap-1">
+            <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
               <div 
-                className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-500"
+                className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-300"
                 style={{ width: `${(tools.filter(t => getToolAvailability(t)).length / tools.length) * 100}%` }}
               ></div>
             </div>
-            <span className="text-xs font-bold text-gray-600 dark:text-gray-400">
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
               {Math.round((tools.filter(t => getToolAvailability(t)).length / tools.length) * 100)}%
             </span>
           </div>
