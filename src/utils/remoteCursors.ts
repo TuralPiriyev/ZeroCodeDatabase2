@@ -169,6 +169,20 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
   root.style.position = (window.getComputedStyle(root).position === 'static') ? 'relative' : window.getComputedStyle(root).position;
   root.appendChild(overlay);
 
+  // visible status badge to help debug if cursors are tracked
+  const status = document.createElement('div');
+  status.style.position = 'absolute';
+  status.style.right = '8px';
+  status.style.bottom = '8px';
+  status.style.padding = '6px 8px';
+  status.style.background = 'rgba(0,0,0,0.6)';
+  status.style.color = '#fff';
+  status.style.borderRadius = '8px';
+  status.style.fontSize = '12px';
+  status.style.pointerEvents = 'none';
+  status.textContent = 'cursors: 0';
+  overlay.appendChild(status);
+
   type CursorState = {
     el: HTMLElement;
     dot: HTMLElement;
@@ -202,6 +216,7 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
       img.src = c.avatar;
       img.style.width = '100%';
       img.style.height = '100%';
+      img.style.objectFit = 'cover';
       img.onerror = () => { avatar.textContent = initials(c.displayName || c.userId); };
       avatar.appendChild(img);
     } else {
@@ -219,8 +234,8 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     inner.appendChild(avatar);
     inner.appendChild(badge);
 
-    wrapper.appendChild(dot);
-    wrapper.appendChild(inner);
+  wrapper.appendChild(dot);
+  wrapper.appendChild(inner);
 
     overlay.appendChild(wrapper);
 
@@ -228,7 +243,12 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     const initX = rect.left + (c.coordsType === 'normalized' ? c.x * rect.width : c.x) - window.scrollX;
     const initY = rect.top + (c.coordsType === 'normalized' ? c.y * rect.height : c.y) - window.scrollY;
 
-    const state: CursorState = { el: wrapper, dot, badge, avatarEl: avatar, targetX: initX, targetY: initY, curX: initX, curY: initY, lastSeen: Date.now(), color: c.color };
+  // ensure wrapper is absolutely positioned at 0,0 so translate moves it into place
+  wrapper.style.position = 'absolute';
+  wrapper.style.left = '0px';
+  wrapper.style.top = '0px';
+
+  const state: CursorState = { el: wrapper, dot, badge, avatarEl: avatar, targetX: initX, targetY: initY, curX: initX, curY: initY, lastSeen: Date.now(), color: c.color };
 
   return state;
   }
@@ -274,6 +294,9 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     if (!s) {
       s = buildCursorEl(c);
       cursors.set(key, s);
+  // update status
+  status.textContent = `cursors: ${cursors.size}`;
+  if (options.dev) console.debug('[RemoteCursors] created cursor for', key);
     }
   s.targetX = local.x;
   s.targetY = local.y;
@@ -289,6 +312,8 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     if (!s) return;
     try { overlay.removeChild(s.el); } catch (e) {}
     cursors.delete(userId);
+  status.textContent = `cursors: ${cursors.size}`;
+  if (options.dev) console.debug('[RemoteCursors] removed cursor for', userId);
   }
 
   // Throttle inbound processing by timestamp per-user
@@ -297,8 +322,9 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
 
   // Handle incoming socket events
   const onCursorEvent = (raw: any) => {
-    const c = normalizeCursorPayload(raw, options.dev);
+  const c = normalizeCursorPayload(raw, options.dev);
     if (!c) return;
+  if (options.dev) console.debug('[RemoteCursors] onCursorEvent normalized:', c);
     const prev = lastProcessed.get(c.userId) || 0;
     const now = Date.now();
     if (now - prev < minInterval) {
