@@ -268,7 +268,9 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
     : 'viewer';
 
   return (
-    <div className="h-full flex flex-col" style={{ position: 'relative' }}>
+    <div id={`workspace-root-${workspace.id}`} className="h-full flex flex-col" style={{ position: 'relative' }}>
+      {/* Global cursor presence overlay for this workspace */}
+      <CursorPresence workspaceId={workspace.id} />
       {/* Header */}
       <div className="p-6 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between mb-4">
