@@ -239,25 +239,35 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     return parts.map(p => p[0]?.toUpperCase() || '').join('').slice(0,2);
   }
 
-  // Convert canonical cursor coords to page client coords relative to root
-  function canonicalToPage(c: CanonicalCursor) {
+  // Convert canonical cursor coords to local coordinates relative to root's top-left
+  function canonicalToLocal(c: CanonicalCursor) {
     const rect = root.getBoundingClientRect();
+    const rootPageLeft = rect.left + window.scrollX;
+    const rootPageTop = rect.top + window.scrollY;
+
+    let localX: number;
+    let localY: number;
+
     if (c.coordsType === 'normalized') {
-      const pageX = rect.left + c.x * rect.width;
-      const pageY = rect.top + c.y * rect.height;
-      return { x: pageX - window.scrollX, y: pageY - window.scrollY };
+      localX = c.x * rect.width;
+      localY = c.y * rect.height;
+    } else if (c.coordsType === 'page') {
+      // page coordinates are relative to document; subtract root page position
+      localX = c.x - rootPageLeft;
+      localY = c.y - rootPageTop;
+    } else {
+      // client coordinates (viewport-relative): subtract root's client rect
+      localX = c.x - rect.left;
+      localY = c.y - rect.top;
     }
-    if (c.coordsType === 'page') {
-      return { x: c.x - window.scrollX, y: c.y - window.scrollY };
-    }
-    // client
-    return { x: c.x, y: c.y };
+
+    return { x: localX, y: localY };
   }
 
   // Update or create cursor
   function upsertCursor(c: CanonicalCursor) {
     if (!c || !c.userId) return;
-    const page = canonicalToPage(c);
+  const local = canonicalToLocal(c);
     const now = Date.now();
     const key = c.userId;
     let s = cursors.get(key);
@@ -265,8 +275,8 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
       s = buildCursorEl(c);
       cursors.set(key, s);
     }
-    s.targetX = page.x;
-    s.targetY = page.y;
+  s.targetX = local.x;
+  s.targetY = local.y;
     s.lastSeen = now;
     // update label/avatar/color quickly
     if (c.displayName) s.badge.textContent = c.displayName;
@@ -295,9 +305,9 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
       // accept but don't force heavy updates; update target only
       const existing = cursors.get(c.userId);
       if (existing) {
-        const page = canonicalToPage(c);
-        existing.targetX = page.x;
-        existing.targetY = page.y;
+        const local = canonicalToLocal(c);
+        existing.targetX = local.x;
+        existing.targetY = local.y;
         existing.lastSeen = now;
       } else {
         upsertCursor(c);
