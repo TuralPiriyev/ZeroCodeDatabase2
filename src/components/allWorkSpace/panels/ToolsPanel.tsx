@@ -159,10 +159,10 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
 
       {/* Tool Content - Scrollable və kompakt */}
       <div className={`flex-1 overflow-y-auto bg-gradient-to-br from-gray-50 to-blue-50/30 dark:from-gray-900 dark:to-blue-900/10 ${collapsed ? 'hidden' : ''}`}>
-        <div className="p-4">
+        <div className="p-6">
           {activeTool === 'ddl_builder' && (
-            <div className="space-y-4">
-              <div className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white p-4 rounded-xl shadow-lg">
+            <div className="space-y-6 mx-4 my-3">
+              <div className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white p-5 rounded-xl shadow-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
                     <Database className="w-4 h-4" />
@@ -178,8 +178,8 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'data_manager' && (
-            <div className="space-y-4">
-              <div className="bg-gradient-to-r from-green-500 to-emerald-500 text-white p-4 rounded-xl shadow-lg">
+            <div className="space-y-6 mx-4 my-3">
+              <div className="bg-gradient-to-r from-green-500 to-emerald-500 text-white p-5 rounded-xl shadow-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
                     <FileText className="w-4 h-4" />
@@ -195,8 +195,8 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'query_builder' && (
-            <div className="space-y-4">
-              <div className="bg-gradient-to-r from-purple-500 to-violet-500 text-white p-4 rounded-xl shadow-lg">
+            <div className="space-y-6 mx-4 my-3">
+              <div className="bg-gradient-to-r from-purple-500 to-violet-500 text-white p-5 rounded-xl shadow-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
                     <Search className="w-4 h-4" />
@@ -212,8 +212,8 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'relationships' && (
-            <div className="space-y-4">
-              <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white p-4 rounded-xl shadow-lg">
+            <div className="space-y-6 mx-4 my-3">
+              <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white p-5 rounded-xl shadow-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
                     <Link className="w-4 h-4" />
@@ -229,8 +229,8 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'team_collaboration' && (
-            <div className="space-y-4">
-              <div className="bg-gradient-to-r from-pink-500 to-rose-500 text-white p-4 rounded-xl shadow-lg">
+            <div className="space-y-6 mx-4 my-3">
+              <div className="bg-gradient-to-r from-pink-500 to-rose-500 text-white p-5 rounded-xl shadow-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
                     <Users className="w-4 h-4" />
@@ -246,8 +246,8 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'sql_validator' && (
-            <div className="space-y-4">
-              <div className="bg-gradient-to-r from-yellow-500 to-amber-500 text-white p-4 rounded-xl shadow-lg">
+            <div className="space-y-6 mx-4 my-3">
+              <div className="bg-gradient-to-r from-yellow-500 to-amber-500 text-white p-5 rounded-xl shadow-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
                     <AlertTriangle className="w-4 h-4" />
@@ -263,8 +263,8 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'live_sql' && (
-            <div className="space-y-4">
-              <div className="bg-gradient-to-r from-indigo-500 to-blue-500 text-white p-4 rounded-xl shadow-lg">
+            <div className="space-y-6 mx-4 my-3">
+              <div className="bg-gradient-to-r from-indigo-500 to-blue-500 text-white p-5 rounded-xl shadow-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
                     <Code className="w-4 h-4" />
@@ -280,8 +280,8 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
           )}
           
           {activeTool === 'smart_export' && (
-            <div className="space-y-4">
-              <div className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white p-4 rounded-xl shadow-lg">
+            <div className="space-y-6 mx-4 my-3">
+              <div className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white p-5 rounded-xl shadow-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center">
                     <Download className="w-4 h-4" />
