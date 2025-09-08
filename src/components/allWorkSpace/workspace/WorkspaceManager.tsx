@@ -11,6 +11,7 @@ import TeamMembersList from '../../workspace/TeamMembersList';
 import SharedSchemas from '../../workspace/SharedSchemas';
 import CursorPresence from './CursorPresence';
 import initRemoteCursors from '../../../utils/remoteCursors';
+import { simpleWebSocketService } from '../../../services/simpleWebSocketService';
 
 interface WorkspaceData {
   id: string;
@@ -68,7 +69,8 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
     let rc: any = null;
     try {
       // workspace root element exists in DOM with id `workspace-root-<id>`
-      rc = initRemoteCursors((window as any).simpleWebSocketService || require('../../../services/simpleWebSocketService').simpleWebSocketService, `#workspace-root-${workspace.id}`, { dev: false });
+      // Pass the shared simpleWebSocketService instance so events are received by the overlay
+      rc = initRemoteCursors(simpleWebSocketService, `#workspace-root-${workspace.id}`, { dev: false });
     } catch (e) {
       console.warn('Failed to init remote cursors overlay', e);
     }
