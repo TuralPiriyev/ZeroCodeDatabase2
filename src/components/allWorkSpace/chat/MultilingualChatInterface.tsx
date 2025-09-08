@@ -364,34 +364,39 @@ const MultilingualChatInterface: React.FC = () => {
         </div>
       )}
 
-      {/* Input */}
-      <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-            placeholder={
-              canUseFeature('canUseAI') 
-                ? (selectedLanguage.code === 'az' ? 'Schema dizaynı haqqında soruşun...' :
-                   selectedLanguage.code === 'tr' ? 'Şema tasarımı hakkında sorun...' :
-                   selectedLanguage.code === 'ru' ? 'Спросите о дизайне схемы...' :
-                   'Ask about schema design...')
-                : 'Upgrade to Pro for multilingual AI assistance'
-            }
-            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-sky-500 focus:border-sky-500 text-sm"
-            disabled={isTyping || !canUseFeature('canUseAI')}
-          />
+      {/* Input - Fixed at bottom */}
+      <div className="sticky bottom-0 p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg">
+        <div className="flex gap-3">
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+              placeholder={
+                canUseFeature('canUseAI') 
+                  ? (selectedLanguage.code === 'az' ? 'Schema dizaynı haqqında soruşun...' :
+                     selectedLanguage.code === 'tr' ? 'Şema tasarımı hakkında sorun...' :
+                     selectedLanguage.code === 'ru' ? 'Спросите о дизайне схемы...' :
+                     'Ask about schema design...')
+                  : 'Upgrade to Pro for multilingual AI assistance'
+              }
+              className="w-full px-4 py-3 pr-12 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-sky-500 focus:border-sky-500 text-sm shadow-sm"
+              disabled={isTyping || !canUseFeature('canUseAI')}
+            />
+            <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+              <Globe className="w-4 h-4" />
+            </div>
+          </div>
           <button
             onClick={handleSendMessage}
             disabled={!inputValue.trim() || isTyping || !canUseFeature('canUseAI')}
-            className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:bg-gray-400 text-white rounded-lg transition-colors duration-200 flex items-center justify-center"
+            className="px-6 py-3 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 disabled:from-gray-400 disabled:to-gray-500 text-white rounded-xl transition-all duration-200 flex items-center justify-center shadow-lg hover:shadow-xl transform hover:scale-105 disabled:transform-none"
           >
             {isTyping ? (
-              <Loader className="w-4 h-4 animate-spin" />
+              <Loader className="w-5 h-5 animate-spin" />
             ) : (
-              <Send className="w-4 h-4" />
+              <Send className="w-5 h-5" />
             )}
           </button>
         </div>

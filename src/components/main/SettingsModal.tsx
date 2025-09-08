@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, User, Mail, Crown, Loader } from 'lucide-react';
+import { X, User, Mail, Crown, Loader, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
 
 interface UserSettings {
@@ -15,6 +17,8 @@ interface SettingsModalProps {
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+  const navigate = useNavigate();
+  const { logout } = useAuth();
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +65,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         return <Crown className="w-4 h-4" />;
       default:
         return <User className="w-4 h-4" />;
+    }
+  };
+
+  const handleLogout = async () => {
+    if (confirm('Are you sure you want to log out?')) {
+      try {
+        await logout();
+        navigate('/login');
+        onClose();
+      } catch (error) {
+        console.error('Logout error:', error);
+      }
     }
   };
 
@@ -181,6 +197,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
               </div>
             </div>
           ) : null}
+
+          {/* Logout Section */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl transition-colors duration-200 font-medium"
+            >
+              <LogOut className="w-5 h-5" />
+              Log Out
+            </button>
+          </div>
         </div>
 
         {/* Footer */}

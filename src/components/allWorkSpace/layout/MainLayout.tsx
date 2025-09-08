@@ -1,6 +1,6 @@
 // src/components/allWorkSpace/layout/MainLayout.tsx
 import React, { useState, useEffect } from 'react';
-import { Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Menu, X, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react';
 import Header from './Header';
 import WorkspacePanel from '../panels/WorkspacePanel';
 import PortfolioPanel from '../panels/PortfolioPanel';
@@ -13,11 +13,56 @@ const MainLayout: React.FC = () => {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(320);
+  const [rightPanelWidth, setRightPanelWidth] = useState(320);
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [isResizingRight, setIsResizingRight] = useState(false);
   const [collaborativeCursors, setCollaborativeCursors] = useState<CursorData[]>([]);
   const [isCollaborationConnected, setIsCollaborationConnected] = useState(false);
   const [cursorUpdateThrottle, setCursorUpdateThrottle] = useState<number>(0);
 
   const { currentSchema } = useDatabase();
+
+  // Resizing handlers
+  const handleLeftResize = (e: React.MouseEvent) => {
+    setIsResizingLeft(true);
+    const startX = e.clientX;
+    const startWidth = leftPanelWidth;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.max(250, Math.min(600, startWidth + (e.clientX - startX)));
+      setLeftPanelWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingLeft(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleRightResize = (e: React.MouseEvent) => {
+    setIsResizingRight(true);
+    const startX = e.clientX;
+    const startWidth = rightPanelWidth;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.max(250, Math.min(600, startWidth - (e.clientX - startX)));
+      setRightPanelWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingRight(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
 
   useEffect(() => {
     const handleCollaborationUpdate = (event: CustomEvent) => {
@@ -187,8 +232,23 @@ const MainLayout: React.FC = () => {
           fixed inset-y-0 left-0 z-40 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transform transition-all duration-300 ease-in-out shadow-xl
           lg:relative lg:translate-x-0 lg:shadow-none
           ${leftPanelOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-          ${leftPanelCollapsed ? 'lg:w-12' : 'w-80 lg:w-1/5 lg:min-w-80'}
-        `}>
+          ${leftPanelCollapsed ? 'lg:w-12' : 'w-80'}
+        `} style={{ width: leftPanelCollapsed ? '48px' : `${leftPanelWidth}px` }}>
+          
+          {/* Resize Handle */}
+          {!leftPanelCollapsed && (
+            <div
+              className="absolute top-0 right-0 w-1 h-full cursor-col-resize bg-transparent hover:bg-blue-500 transition-colors duration-200 group z-50"
+              onMouseDown={handleLeftResize}
+            >
+              <div className="absolute top-1/2 right-0 transform -translate-y-1/2 translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="bg-blue-500 text-white p-1 rounded-full shadow-lg">
+                  <GripVertical className="w-3 h-3" />
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Collapse Toggle Button */}
           <div className="hidden lg:block absolute top-4 -right-3 z-50">
             <button
@@ -228,8 +288,23 @@ const MainLayout: React.FC = () => {
           fixed inset-y-0 right-0 z-40 bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 transform transition-all duration-300 ease-in-out shadow-xl
           lg:relative lg:translate-x-0 lg:shadow-none
           ${rightPanelOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
-          ${rightPanelCollapsed ? 'lg:w-12' : 'w-80 lg:w-1/5 lg:min-w-80'}
-        `}>
+          ${rightPanelCollapsed ? 'lg:w-12' : 'w-80'}
+        `} style={{ width: rightPanelCollapsed ? '48px' : `${rightPanelWidth}px` }}>
+          
+          {/* Resize Handle */}
+          {!rightPanelCollapsed && (
+            <div
+              className="absolute top-0 left-0 w-1 h-full cursor-col-resize bg-transparent hover:bg-blue-500 transition-colors duration-200 group z-50"
+              onMouseDown={handleRightResize}
+            >
+              <div className="absolute top-1/2 left-0 transform -translate-y-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="bg-blue-500 text-white p-1 rounded-full shadow-lg">
+                  <GripVertical className="w-3 h-3" />
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Collapse Toggle Button */}
           <div className="hidden lg:block absolute top-4 -left-3 z-50">
             <button
@@ -268,6 +343,11 @@ const MainLayout: React.FC = () => {
           />
         )}
       </div>
+      
+      {/* Resizing overlay */}
+      {(isResizingLeft || isResizingRight) && (
+        <div className="fixed inset-0 z-50 cursor-col-resize bg-black bg-opacity-10" />
+      )}
     </div>
   );
 };

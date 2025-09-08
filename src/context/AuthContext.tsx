@@ -16,9 +16,13 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  authError: string | null;
   login: (email: string, password: string) => Promise<boolean>;
-  register: (username: string, email: string, password: string) => Promise<boolean>;
+  register: (userData: { username: string; email: string; password: string; fullName: string; phone: string }) => Promise<boolean>;
   logout: () => void;
+  verifyCode: (email: string, code: string) => Promise<void>;
+  requestResend: (email: string) => Promise<void>;
+  getCurrentUserEmail: () => string | null;
   updateUserProfile: (updates: Partial<User>) => Promise<void>;
   getCurrentUser: () => User | null;
 }
@@ -40,6 +44,7 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Generate user color based on username
   const generateUserColor = (username: string): string => {
@@ -85,6 +90,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       setIsLoading(true);
+      setAuthError(null);
       const response = await api.post('/auth/login', { email, password });
       
       if (response.data.token) {
@@ -107,19 +113,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return false;
     } catch (error) {
       console.error('Login failed:', error);
+      setAuthError('Invalid email or password');
       return false;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const register = async (username: string, email: string, password: string): Promise<boolean> => {
+  const register = async (userData: { username: string; email: string; password: string; fullName: string; phone: string }): Promise<boolean> => {
     try {
       setIsLoading(true);
+      setAuthError(null);
       const response = await api.post('/auth/register', {
-        username,
-        email,
-        password
+        ...userData
       });
       
       if (response.data.token) {
@@ -138,10 +144,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return false;
     } catch (error) {
       console.error('Registration failed:', error);
+      setAuthError('Registration failed. Please try again.');
       return false;
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const verifyCode = async (email: string, code: string): Promise<void> => {
+    try {
+      setAuthError(null);
+      // Mock verification for now
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('Code verified:', { email, code });
+    } catch (error) {
+      setAuthError('Invalid verification code');
+      throw error;
+    }
+  };
+
+  const requestResend = async (email: string): Promise<void> => {
+    try {
+      setAuthError(null);
+      console.log('Resend requested for:', email);
+    } catch (error) {
+      setAuthError('Failed to resend code');
+    }
+  };
+
+  const getCurrentUserEmail = (): string | null => {
+    return user?.email || null;
   };
 
   const logout = async () => {
@@ -178,9 +210,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     user,
     isAuthenticated: !!user,
     isLoading,
+    authError,
     login,
     register,
     logout,
+    verifyCode,
+    requestResend,
+    getCurrentUserEmail,
     updateUserProfile,
     getCurrentUser
   };
