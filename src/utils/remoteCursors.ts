@@ -27,6 +27,8 @@ function injectCss() {
   .rc-avatar { width:22px;height:22px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;font-weight:600;color:#fff;font-size:12px;margin-right:6px; }
   .rc-wrapper { display:flex; align-items:center; gap:6px; }
   .rc-hidden { opacity:0; pointer-events:none; }
+  /* debug helper: when dev mode enabled, elements get a bright outline to help find them */
+  .rc-cursor.rc-debug { outline: 2px dashed rgba(255,0,0,0.85); background: rgba(255,255,255,0.02); }
   `;
   const s = document.createElement('style');
   s.setAttribute('data-rc','1');
@@ -151,8 +153,9 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
 
   let rootEl: Element | null = typeof workspaceRoot === 'string' ? document.querySelector(workspaceRoot) : workspaceRoot as Element;
   if (!rootEl) {
-    console.error('[RemoteCursors] workspace root not found:', workspaceRoot);
-    return { destroy: () => {}, toggle: () => {}, setDev: (_: boolean) => {} };
+    // Don't abort — fall back to document.body so the overlay can still be used for debugging
+    console.warn('[RemoteCursors] workspace root not found:', workspaceRoot, '- falling back to document.body');
+    rootEl = document.body;
   }
 
   // root is non-null here
@@ -169,6 +172,7 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
   overlay.style.pointerEvents = 'none';
   overlay.style.zIndex = '99999';
   overlay.className = 'rc-overlay';
+  overlay.setAttribute('data-rc-overlay', '1');
   // attach to body so overlay is above any transformed/scrolling workspace root
   document.body.appendChild(overlay);
 
@@ -184,6 +188,7 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
   status.style.fontSize = '12px';
   status.style.pointerEvents = 'none';
   status.textContent = 'cursors: 0';
+  status.setAttribute('data-rc-status', '1');
   overlay.appendChild(status);
 
   type CursorState = {
@@ -204,6 +209,7 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
   function buildCursorEl(c: CanonicalCursor): CursorState {
     const wrapper = document.createElement('div');
     wrapper.className = 'rc-cursor';
+    if (options.dev) wrapper.classList.add('rc-debug');
     wrapper.style.left = '0px';
     wrapper.style.top = '0px';
     wrapper.style.transform = 'translate3d(-9999px,-9999px,0)';
