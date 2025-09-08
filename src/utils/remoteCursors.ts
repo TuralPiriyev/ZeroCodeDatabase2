@@ -353,6 +353,20 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
   };
   socket.on('message', onMessage);
 
+  // additional dev logging: subscribe to a set of common events and print concise info
+  const devHandlers: Array<{ evt: string; h: (d: any) => void }> = [];
+  if (options.dev) {
+    ['cursor_update', 'message', 'db_update', 'user_joined', 'user_left'].forEach(evt => {
+      const h = (d: any) => {
+        try {
+          console.info('[RemoteCursors] evt', evt, Object.keys(d || {}).length ? (d.type ? d.type : Object.keys(d).slice(0,6)) : d);
+        } catch (e) { console.info('[RemoteCursors] evt', evt); }
+      };
+      socket.on(evt, h);
+      devHandlers.push({ evt, h });
+    });
+  }
+
   // animation loop
   let rafId: number | null = null;
   function step() {
@@ -379,6 +393,10 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     try {
       socket.off('cursor_update', onCursorEvent);
   socket.off('message', onMessage as any);
+      // remove dev handlers
+      try {
+        if (devHandlers.length) devHandlers.forEach(dh => socket.off(dh.evt, dh.h));
+      } catch (e) {}
     } catch (e) {}
     if (rafId) cancelAnimationFrame(rafId);
     try { overlay.remove(); } catch (e) {}
