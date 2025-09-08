@@ -14,6 +14,7 @@ const CursorPresence: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
   const { getCurrentUser } = useAuth();
   const user = getCurrentUser();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const workspaceRootId = `workspace-root-${workspaceId}`;
   const [cursors, setCursors] = useState<Record<string, CursorData>>({});
 
   // throttle emits to ~50ms
@@ -76,7 +77,9 @@ const CursorPresence: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
   }, [workspaceId, user]);
 
   useEffect(() => {
-    const el = containerRef.current;
+  // Prefer the workspace root element so coordinates align with layout
+  const rootEl = document.getElementById(workspaceRootId);
+  const el = containerRef.current || rootEl || document.body;
     if (!el) return;
 
     const onMove = (ev: MouseEvent) => {
@@ -85,15 +88,16 @@ const CursorPresence: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
       if (now - lastEmitRef.current < 50) return; // throttle
       lastEmitRef.current = now;
 
-      const rect = el.getBoundingClientRect();
-      const x = Math.max(0, Math.min(rect.width, ev.clientX - rect.left));
-      const y = Math.max(0, Math.min(rect.height, ev.clientY - rect.top));
+  const rect = el.getBoundingClientRect();
+  const x = Math.max(0, Math.min(rect.width, ev.clientX - rect.left));
+  const y = Math.max(0, Math.min(rect.height, ev.clientY - rect.top));
 
       try {
         simpleWebSocketService.send('cursor_update', {
           cursor: {
             userId: user.id,
             username: user.username,
+            // send coordinates relative to workspace root
             position: { x: Math.round(x), y: Math.round(y) },
             color: (user as any).color || undefined,
             lastSeen: new Date().toISOString()
@@ -116,8 +120,8 @@ const CursorPresence: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
   }, [user, workspaceId]);
 
   return (
-    // overlay container should be positioned by parent; we'll use absolute positioning inside
-    <div ref={containerRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 60 }}>
+    // overlay container positioned over the whole workspace root
+    <div ref={containerRef} id={`cursor-overlay-${workspaceId}`} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 60 }}>
       {Object.values(cursors).map(c => {
         // don't render local user's cursor label (optional)
         if (!c || !c.position) return null;
@@ -129,7 +133,7 @@ const CursorPresence: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <div style={{ width: 10, height: 10, borderRadius: 6, background: c.color || '#7c3aed', boxShadow: '0 0 6px rgba(0,0,0,0.15)' }} />
               {!isLocal && (
-                <div style={{ background: 'rgba(0,0,0,0.65)', color: '#fff', padding: '2px 6px', borderRadius: 6, fontSize: 12, whiteSpace: 'nowrap' }}>
+                <div style={{ background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '4px 8px', borderRadius: 8, fontSize: 12, whiteSpace: 'nowrap', marginTop: 6 }}>
                   {c.username}
                 </div>
               )}

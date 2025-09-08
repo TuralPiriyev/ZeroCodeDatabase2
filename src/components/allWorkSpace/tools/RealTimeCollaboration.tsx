@@ -120,9 +120,28 @@ const RealTimeCollaboration: React.FC = () => {
         console.error('Failed sharing selected schema during workspace creation:', err);
       }
 
-    } catch (err) {
+    } catch (err: any) {
+      // Try to surface a friendly server-provided message (e.g., 409 conflict)
       console.error('❌ Create workspace failed:', err);
-      setError('Failed to create workspace');
+      let friendly = 'Failed to create workspace';
+      // apiService throws Errors with message containing server error text when available
+      try {
+        const msg = err instanceof Error ? err.message : String(err);
+        // common pattern: server returns JSON { error: '...' } and apiService throws that string
+        if (msg && /already exists/i.test(msg)) {
+          friendly = 'A workspace with that name already exists. Choose a different name.';
+        } else if (msg && /403|access denied|forbidden/i.test(msg)) {
+          friendly = 'You do not have permission to create this workspace.';
+        } else if (msg && /401|unauthenticated/i.test(msg)) {
+          friendly = 'Please sign in to create a workspace.';
+        } else if (msg && msg.length < 200) {
+          // fallback: show the server message if it's short
+          friendly = msg;
+        }
+      } catch (e) {
+        // ignore
+      }
+      setError(friendly);
     } finally {
       setCreating(false);
     }
@@ -180,6 +199,9 @@ const RealTimeCollaboration: React.FC = () => {
             />
             <button onClick={createWorkspace} disabled={creating} className="px-3 py-2 bg-blue-600 text-white rounded">Create</button>
           </div>
+          {error && !['unauthenticated','access_denied','no_workspaces','network'].includes(error) && (
+            <div className="mt-2 text-sm text-red-600">{error}</div>
+          )}
 
           {/* NEW: Schema selection for sharing when creating workspace */}
           <div className="mt-3 text-sm">
