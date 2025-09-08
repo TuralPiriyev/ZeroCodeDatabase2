@@ -70,7 +70,8 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
     try {
       // workspace root element exists in DOM with id `workspace-root-<id>`
       // Pass the shared simpleWebSocketService instance so events are received by the overlay
-      rc = initRemoteCursors(simpleWebSocketService, `#workspace-root-${workspace.id}`, { dev: false });
+  // enable dev:true temporarily to surface normalized payloads and cursor counts
+  rc = initRemoteCursors(simpleWebSocketService, `#workspace-root-${workspace.id}`, { dev: true });
     } catch (e) {
       console.warn('Failed to init remote cursors overlay', e);
     }
