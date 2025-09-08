@@ -1,5 +1,7 @@
 // src/services/collaborationService.ts
 import { simpleWebSocketService } from './simpleWebSocketService';
+// import normalization helper from remoteCursors (used for parsing only)
+import { normalizeCursorPayload } from '../utils/remoteCursors';
 
 export interface CollaborationUser {
   id: string;
@@ -231,17 +233,18 @@ export default class CollaborationService {
 
       case 'cursor_update':
         {
-          const cursorData = message.data ?? message.cursor ?? null;
-          if (this.isValidCursorData(cursorData)) {
-            console.log('📍 Valid cursor update received:', cursorData);
-            this.emit('cursor_update', cursorData);
-          } else {
-            console.warn('⚠️ Invalid cursor_update message structure:', {
-              message,
-              hasData: !!message.data,
-              dataType: typeof message.data,
-              dataKeys: message.data ? Object.keys(message.data) : []
-            });
+          // Use tolerant normalization so we accept many server wrapper shapes
+          try {
+            const normalized = normalizeCursorPayload(message, /*dev*/ false);
+            if (normalized) {
+              // emit canonical cursor object to local listeners
+              this.emit('cursor_update', normalized);
+            } else {
+              // silently ignore malformed shapes (normalizeCursorPayload will log once in dev)
+            }
+          } catch (e) {
+            // unexpected error while parsing -- surface once
+            console.debug('⚠️ Remote cursor parse error', e);
           }
         }
         break;
@@ -271,7 +274,7 @@ export default class CollaborationService {
   }
 
   private isValidCursorData(data: any): boolean {
-    return !!data && typeof data === 'object' && typeof data.userId === 'string' && data.userId.trim().length > 0;
+  return !!data && typeof data === 'object' && typeof data.userId === 'string' && data.userId.trim().length > 0;
   }
 
   sendCursorUpdate(position: CursorPosition) {

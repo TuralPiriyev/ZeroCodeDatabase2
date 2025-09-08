@@ -10,6 +10,7 @@ import InvitationForm from '../../workspace/InvitationForm';
 import TeamMembersList from '../../workspace/TeamMembersList';
 import SharedSchemas from '../../workspace/SharedSchemas';
 import CursorPresence from './CursorPresence';
+import initRemoteCursors from '../../../utils/remoteCursors';
 
 interface WorkspaceData {
   id: string;
@@ -60,6 +61,19 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
       try { collaborationService.disconnect(); } catch (e) {}
     };
   }, [workspaceId]);
+
+  // Initialize remote cursors overlay when workspace root is available and socket connected
+  useEffect(() => {
+    if (!workspace) return;
+    let rc: any = null;
+    try {
+      // workspace root element exists in DOM with id `workspace-root-<id>`
+      rc = initRemoteCursors((window as any).simpleWebSocketService || require('../../../services/simpleWebSocketService').simpleWebSocketService, `#workspace-root-${workspace.id}`, { dev: false });
+    } catch (e) {
+      console.warn('Failed to init remote cursors overlay', e);
+    }
+    return () => { try { rc && rc.destroy && rc.destroy(); } catch (e) {} };
+  }, [workspace]);
 
   // Initialize collaborationService when a shared schema is loaded
   useEffect(() => {
