@@ -193,7 +193,7 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
 
   type CursorState = {
     el: HTMLElement;
-    dot: HTMLElement;
+    dot: HTMLElement; // pointer element (kept named `dot` for compatibility)
     badge: HTMLElement;
     avatarEl: HTMLElement;
     targetX: number;
@@ -212,14 +212,15 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     wrapper.setAttribute('data-rc-cursor', c.userId);
     wrapper.style.left = '0px';
     wrapper.style.top = '0px';
+    wrapper.style.position = 'absolute';
     wrapper.style.transform = 'translate3d(-9999px,-9999px,0)';
 
     const inner = document.createElement('div');
     inner.className = 'rc-wrapper';
 
+    // avatar (image or initials)
     const avatar = document.createElement('div');
     avatar.className = 'rc-avatar';
-    avatar.style.background = c.color || '#7c3aed';
     if (c.avatar) {
       const img = document.createElement('img');
       img.src = c.avatar;
@@ -232,45 +233,50 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
       avatar.textContent = initials(c.displayName || c.userId);
     }
 
-    // create a mouse-pointer shaped SVG instead of a simple dot
+    const badge = document.createElement('div');
+    badge.className = 'rc-badge';
+    badge.textContent = c.displayName || c.userId;
+
+    // create a mouse-pointer shaped SVG element (use dot property name for compatibility)
     const pointer = document.createElement('div');
     pointer.className = 'rc-pointer';
-    // SVG uses currentColor so we can tint with CSS color
     pointer.innerHTML = `
       <svg viewBox="0 0 24 32" width="24" height="32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <path fill="currentColor" d="M1 1 L18 16 L11 17 L14 30 L9 31 L6 18 L1 1 Z"/>
       </svg>
     `;
-    pointer.style.color = c.color || '#7c3aed';
-    // position transform will be applied by wrapper translate3d; offset so tip aligns
+    // tint via currentColor
+    (pointer.style as any).color = c.color || '#7c3aed';
+    // small offset so the tip aligns with the coords
     pointer.style.transform = 'translate(-6px,-2px)';
-
-    const badge = document.createElement('div');
-    badge.className = 'rc-badge';
-    badge.textContent = c.displayName || c.userId;
 
     inner.appendChild(avatar);
     inner.appendChild(badge);
 
-  // use pointer icon
-  wrapper.appendChild(pointer);
-  wrapper.appendChild(inner);
+    wrapper.appendChild(pointer);
+    wrapper.appendChild(inner);
 
-  // compute initial viewport (client) coordinates for the cursor using root mapping
-  const vp = canonicalToViewport(c);
-  // ensure wrapper is absolutely positioned in the fixed overlay and translate3d will place it
-  wrapper.style.position = 'absolute';
-  wrapper.style.left = '0px';
-  wrapper.style.top = '0px';
-  wrapper.style.transform = `translate3d(${Math.round(vp.x)}px, ${Math.round(vp.y)}px, 0)`;
+    // compute initial viewport (client) coordinates for the cursor using root mapping
+    const vp = canonicalToViewport(c);
+    wrapper.style.transform = `translate3d(${Math.round(vp.x)}px, ${Math.round(vp.y)}px, 0)`;
 
-  const state: CursorState = { el: wrapper, dot: pointer as any, badge, avatarEl: avatar, targetX: vp.x, targetY: vp.y, curX: vp.x, curY: vp.y, lastSeen: Date.now(), color: c.color };
+    const state: CursorState = {
+      el: wrapper,
+      dot: pointer as any,
+      badge,
+      avatarEl: avatar,
+      targetX: vp.x,
+      targetY: vp.y,
+      curX: vp.x,
+      curY: vp.y,
+      lastSeen: Date.now(),
+      color: c.color
+    };
 
-  if (options.dev) console.debug('[RemoteCursors] buildCursorEl appended for', c.userId, 'at', Math.round(vp.x), Math.round(vp.y));
+    if (options.dev) console.debug('[RemoteCursors] buildCursorEl appended for', c.userId, 'at', Math.round(vp.x), Math.round(vp.y));
 
-  overlay.appendChild(wrapper);
-
-  return state;
+    overlay.appendChild(wrapper);
+    return state;
   }
 
   function initials(name: string) {
