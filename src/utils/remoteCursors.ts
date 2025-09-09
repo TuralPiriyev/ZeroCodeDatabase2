@@ -23,7 +23,8 @@ function injectCss() {
   const css = `
   .rc-cursor { position: absolute; pointer-events: none; transform: translate3d(0,0,0); will-change: transform, opacity; display:flex; align-items:center; gap:8px; }
   .rc-dot { width:12px;height:12px;border-radius:50%;box-shadow:0 0 8px rgba(0,0,0,0.25);transform:translate(-50%,-50%); flex:0 0 auto; }
-  .rc-pointer { width:24px; height:32px; display:inline-block; flex:0 0 auto; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25)); }
+  /* pointer is absolutely positioned so its tip can align with the coordinate (0,0) */
+  .rc-pointer { width:24px; height:32px; position:absolute; left:0; top:0; transform-origin: 0 0; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25)); pointer-events:none; }
   .rc-pointer svg { width:100%; height:100%; display:block; }
   .rc-badge { display:inline-block; background: rgba(0,0,0,0.75); color: #fff; padding:6px 10px; border-radius:10px; font-size:12px; margin-top:0; white-space:nowrap; flex:0 0 auto; }
   .rc-avatar { width:22px;height:22px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;font-weight:600;color:#fff;font-size:12px;margin-right:6px; flex:0 0 auto; }
@@ -240,18 +241,21 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     // create a mouse-pointer shaped SVG element (use dot property name for compatibility)
     const pointer = document.createElement('div');
     pointer.className = 'rc-pointer';
+    // arrow-like mouse pointer SVG (tip at 0,0)
     pointer.innerHTML = `
       <svg viewBox="0 0 24 32" width="24" height="32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path fill="currentColor" d="M1 1 L18 16 L11 17 L14 30 L9 31 L6 18 L1 1 Z"/>
+        <path fill="currentColor" d="M1 1 L1 27 L8 20 L12 30 L14 28 L10 18 L20 10 L1 1 Z" />
       </svg>
     `;
     // tint via currentColor
-    (pointer.style as any).color = c.color || '#7c3aed';
-    // small offset so the tip aligns with the coords
-    pointer.style.transform = 'translate(-6px,-2px)';
+    (pointer.style as any).color = c.color || '#111827';
+    // ensure the pointer's origin (tip) is at 0,0 so the wrapper translate places the tip correctly
+    pointer.style.transform = 'translate(0px,0px)';
 
-    inner.appendChild(avatar);
-    inner.appendChild(badge);
+  inner.appendChild(avatar);
+  inner.appendChild(badge);
+  // offset the badge/avatar so they don't overlap the absolutely-positioned pointer
+  inner.style.marginLeft = '30px';
 
     wrapper.appendChild(pointer);
     wrapper.appendChild(inner);
