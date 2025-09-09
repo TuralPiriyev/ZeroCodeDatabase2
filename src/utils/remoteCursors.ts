@@ -21,12 +21,14 @@ function injectCss() {
   if ((window as any).__remoteCursorsCssInjected) return;
   (window as any).__remoteCursorsCssInjected = true;
   const css = `
-  .rc-cursor { position: absolute; pointer-events: none; transform: translate3d(0,0,0); will-change: transform, opacity; }
-  .rc-dot { width:10px;height:10px;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.12);transform:translate(-50%,-50%); }
-  .rc-badge { display:inline-block; background: rgba(0,0,0,0.7); color: #fff; padding:4px 8px; border-radius:8px; font-size:12px; margin-top:8px; white-space:nowrap; }
-  .rc-avatar { width:22px;height:22px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;font-weight:600;color:#fff;font-size:12px;margin-right:6px; }
+  .rc-cursor { position: absolute; pointer-events: none; transform: translate3d(0,0,0); will-change: transform, opacity; display:flex; align-items:center; gap:8px; }
+  .rc-dot { width:12px;height:12px;border-radius:50%;box-shadow:0 0 8px rgba(0,0,0,0.25);transform:translate(-50%,-50%); flex:0 0 auto; }
+  .rc-badge { display:inline-block; background: rgba(0,0,0,0.75); color: #fff; padding:6px 10px; border-radius:10px; font-size:12px; margin-top:0; white-space:nowrap; flex:0 0 auto; }
+  .rc-avatar { width:22px;height:22px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;font-weight:600;color:#fff;font-size:12px;margin-right:6px; flex:0 0 auto; }
   .rc-wrapper { display:flex; align-items:center; gap:6px; }
   .rc-hidden { opacity:0; pointer-events:none; }
+  .rc-overlay { pointer-events: none; }
+  .rc-cursor, .rc-badge, .rc-dot { z-index: 1000000; }
   `;
   const s = document.createElement('style');
   s.setAttribute('data-rc','1');
@@ -77,9 +79,9 @@ export function normalizeCursorPayload(raw: any, dev = false): CanonicalCursor |
     const cursor = (cand.cursor && typeof cand.cursor === 'object') ? cand.cursor : null;
     const source = cursor || cand;
 
-    // extract identifiers
-    const userId = source.userId || source.uid || source.id || source.user?.id || source.userId;
-    if (!userId || typeof userId !== 'string') continue;
+  // extract identifiers (accept string or numeric ids from different shapes)
+  let userId: any = source.userId ?? source.uid ?? source.id ?? source.user?.id ?? source.userId;
+  if (userId === undefined || userId === null) continue;
 
     const displayName = source.displayName || source.name || source.username || source.user?.displayName || source.user?.username || undefined;
     const avatar = source.avatar || source.avatarUrl || source.avatar_url || source.user?.avatar || source.user?.avatarUrl || null;
@@ -126,9 +128,10 @@ export function normalizeCursorPayload(raw: any, dev = false): CanonicalCursor |
 
     if (typeof x !== 'number' || typeof y !== 'number' || isNaN(x) || isNaN(y)) continue;
 
-    const timestamp = source.timestamp ? (typeof source.timestamp === 'number' ? source.timestamp : Date.parse(source.timestamp)) : Date.now();
+  const timestamp = source.timestamp ? (typeof source.timestamp === 'number' ? source.timestamp : Date.parse(source.timestamp)) : Date.now();
 
-    return { userId: String(userId), displayName: displayName || undefined, avatar: avatar || null, color: color || null, coordsType, x, y, timestamp };
+  // normalize userId to string for deterministic keys
+  return { userId: String(userId), displayName: displayName || undefined, avatar: avatar || null, color: color || null, coordsType, x, y, timestamp };
   }
 
   // If we reach here, the shape didn't match
@@ -324,8 +327,19 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
 
   // Handle incoming socket events
   const onCursorEvent = (raw: any) => {
-  const c = normalizeCursorPayload(raw, options.dev);
-    if (!c) return;
+  let c: CanonicalCursor | null = normalizeCursorPayload(raw, options.dev);
+    if (!c) {
+      // tolerant fallback: try to find any nested object that looks like a cursor payload
+      const fb = tolerantExtract(raw);
+      if (fb) {
+        c = fb;
+        if (options.dev) console.debug('[RemoteCursors] onCursorEvent used fallback normalized:', c, 'from raw:', raw);
+      } else {
+        if (options.dev) console.debug('[RemoteCursors] onCursorEvent ignored payload (no coords found):', raw);
+        return;
+      }
+    }
+  // c is CanonicalCursor here
   if (options.dev) console.debug('[RemoteCursors] onCursorEvent normalized:', c);
     const prev = lastProcessed.get(c.userId) || 0;
     const now = Date.now();
@@ -345,6 +359,25 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     lastProcessed.set(c.userId, now);
     upsertCursor(c);
   };
+
+  // Tolerant recursive extractor: scan nested objects for something that normalizes to a cursor
+  function tolerantExtract(obj: any): CanonicalCursor | null {
+    try {
+      if (!obj || typeof obj !== 'object') return null;
+      // quick candidate check
+      const maybe = normalizeCursorPayload(obj, false);
+      if (maybe) return maybe;
+      // recurse into values
+      for (const k of Object.keys(obj)) {
+        const v = obj[k];
+        if (v && typeof v === 'object') {
+          const found = tolerantExtract(v);
+          if (found) return found;
+        }
+      }
+      return null;
+    } catch (e) { return null; }
+  }
 
   // Listen to both direct event and wrapped message shapes
   socket.on('cursor_update', onCursorEvent);
