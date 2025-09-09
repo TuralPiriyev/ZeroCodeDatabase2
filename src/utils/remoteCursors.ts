@@ -26,6 +26,7 @@ function injectCss() {
   /* pointer is absolutely positioned so its tip can align with the coordinate (0,0) */
   .rc-pointer { width:24px; height:32px; position:absolute; left:0; top:0; transform-origin: 0 0; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25)); pointer-events:none; }
   .rc-pointer svg { width:100%; height:100%; display:block; }
+  .rc-pointer { z-index: 1000001; }
   .rc-badge { display:inline-block; background: rgba(0,0,0,0.75); color: #fff; padding:6px 10px; border-radius:10px; font-size:12px; margin-top:0; white-space:nowrap; flex:0 0 auto; }
   .rc-avatar { width:22px;height:22px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;font-weight:600;color:#fff;font-size:12px;margin-right:6px; flex:0 0 auto; }
   .rc-wrapper { display:flex; align-items:center; gap:6px; }
@@ -336,7 +337,10 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     s.lastSeen = now;
     // update label/avatar/color quickly
     if (c.displayName) s.badge.textContent = c.displayName;
-  if (c.color) { try { (s.dot as HTMLElement).style.background = c.color; } catch (e) {} s.avatarEl.style.background = c.color; }
+    if (c.color) {
+      try { (s.dot as HTMLElement).style.color = c.color; } catch (e) {}
+      try { s.avatarEl.style.background = c.color; } catch (e) {}
+    }
       if (options.dev) console.debug('[RemoteCursors] upsertCursor updated', key, 'target =>', Math.round(s.targetX), Math.round(s.targetY));
   }
 
