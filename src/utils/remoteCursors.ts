@@ -158,16 +158,18 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
   // root is non-null here
   const root = rootEl as HTMLElement;
 
-  // container overlay
+  // container overlay: mount on document.body as fixed so it's never clipped by workspace transforms
   const overlay = document.createElement('div');
-  overlay.style.position = 'absolute';
-  overlay.style.inset = '0';
+  overlay.style.position = 'fixed';
+  overlay.style.top = '0';
+  overlay.style.left = '0';
+  overlay.style.width = '100%';
+  overlay.style.height = '100%';
   overlay.style.pointerEvents = 'none';
-  overlay.style.zIndex = '9999';
+  overlay.style.zIndex = '999999';
   overlay.className = 'rc-overlay';
-  // ensure root is positioned
-  root.style.position = (window.getComputedStyle(root).position === 'static') ? 'relative' : window.getComputedStyle(root).position;
-  root.appendChild(overlay);
+  overlay.setAttribute('data-rc-overlay', '1');
+  document.body.appendChild(overlay);
 
   // visible status badge to help debug if cursors are tracked
   const status = document.createElement('div');
@@ -181,6 +183,7 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
   status.style.fontSize = '12px';
   status.style.pointerEvents = 'none';
   status.textContent = 'cursors: 0';
+  status.setAttribute('data-rc-status', '1');
   overlay.appendChild(status);
 
   type CursorState = {
@@ -201,6 +204,7 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
   function buildCursorEl(c: CanonicalCursor): CursorState {
     const wrapper = document.createElement('div');
     wrapper.className = 'rc-cursor';
+    wrapper.setAttribute('data-rc-cursor', c.userId);
     wrapper.style.left = '0px';
     wrapper.style.top = '0px';
     wrapper.style.transform = 'translate3d(-9999px,-9999px,0)';
@@ -237,18 +241,19 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
   wrapper.appendChild(dot);
   wrapper.appendChild(inner);
 
-    overlay.appendChild(wrapper);
-
-  const rect = root.getBoundingClientRect();
-    const initX = rect.left + (c.coordsType === 'normalized' ? c.x * rect.width : c.x) - window.scrollX;
-    const initY = rect.top + (c.coordsType === 'normalized' ? c.y * rect.height : c.y) - window.scrollY;
-
-  // ensure wrapper is absolutely positioned at 0,0 so translate moves it into place
+  // compute initial viewport (client) coordinates for the cursor using root mapping
+  const vp = canonicalToViewport(c);
+  // ensure wrapper is absolutely positioned in the fixed overlay and translate3d will place it
   wrapper.style.position = 'absolute';
   wrapper.style.left = '0px';
   wrapper.style.top = '0px';
+  wrapper.style.transform = `translate3d(${Math.round(vp.x)}px, ${Math.round(vp.y)}px, 0)`;
 
-  const state: CursorState = { el: wrapper, dot, badge, avatarEl: avatar, targetX: initX, targetY: initY, curX: initX, curY: initY, lastSeen: Date.now(), color: c.color };
+  const state: CursorState = { el: wrapper, dot, badge, avatarEl: avatar, targetX: vp.x, targetY: vp.y, curX: vp.x, curY: vp.y, lastSeen: Date.now(), color: c.color };
+
+  if (options.dev) console.debug('[RemoteCursors] buildCursorEl appended for', c.userId, 'at', Math.round(vp.x), Math.round(vp.y));
+
+  overlay.appendChild(wrapper);
 
   return state;
   }
@@ -259,44 +264,40 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     return parts.map(p => p[0]?.toUpperCase() || '').join('').slice(0,2);
   }
 
-  // Convert canonical cursor coords to local coordinates relative to root's top-left
-  function canonicalToLocal(c: CanonicalCursor) {
+  // Convert canonical cursor coords to viewport (client) coordinates relative to the document
+  // This maps normalized coords using the workspace root bounding rect and leaves client coords intact.
+  function canonicalToViewport(c: CanonicalCursor) {
     const rect = root.getBoundingClientRect();
-    const rootPageLeft = rect.left + window.scrollX;
-    const rootPageTop = rect.top + window.scrollY;
-
-    let localX: number;
-    let localY: number;
-
+    let clientX: number;
+    let clientY: number;
     if (c.coordsType === 'normalized') {
-      localX = c.x * rect.width;
-      localY = c.y * rect.height;
+      clientX = rect.left + c.x * rect.width;
+      clientY = rect.top + c.y * rect.height;
     } else if (c.coordsType === 'page') {
-      // page coordinates are relative to document; subtract root page position
-      localX = c.x - rootPageLeft;
-      localY = c.y - rootPageTop;
+      // page coords -> convert to client by removing page scroll
+      clientX = c.x - window.scrollX;
+      clientY = c.y - window.scrollY;
     } else {
-      // client coordinates (viewport-relative): subtract root's client rect
-      localX = c.x - rect.left;
-      localY = c.y - rect.top;
+      // client coords are already viewport-relative
+      clientX = c.x;
+      clientY = c.y;
     }
-
-    return { x: localX, y: localY };
+    return { x: clientX, y: clientY };
   }
 
   // Update or create cursor
   function upsertCursor(c: CanonicalCursor) {
     if (!c || !c.userId) return;
-  const local = canonicalToLocal(c);
+  const local = canonicalToViewport(c);
     const now = Date.now();
     const key = c.userId;
     let s = cursors.get(key);
     if (!s) {
-      s = buildCursorEl(c);
-      cursors.set(key, s);
-  // update status
-  status.textContent = `cursors: ${cursors.size}`;
-  if (options.dev) console.debug('[RemoteCursors] created cursor for', key);
+        s = buildCursorEl(c);
+        cursors.set(key, s);
+    // update status
+    status.textContent = `cursors: ${cursors.size}`;
+    if (options.dev) console.debug('[RemoteCursors] created cursor for', key, 'initial target', s.targetX, s.targetY);
     }
   s.targetX = local.x;
   s.targetY = local.y;
@@ -304,6 +305,7 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     // update label/avatar/color quickly
     if (c.displayName) s.badge.textContent = c.displayName;
     if (c.color) { s.dot.style.background = c.color; s.avatarEl.style.background = c.color; }
+      if (options.dev) console.debug('[RemoteCursors] upsertCursor updated', key, 'target =>', Math.round(s.targetX), Math.round(s.targetY));
   }
 
   // Remove cursor (immediate)
@@ -331,7 +333,7 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
       // accept but don't force heavy updates; update target only
       const existing = cursors.get(c.userId);
       if (existing) {
-        const local = canonicalToLocal(c);
+  const local = canonicalToViewport(c);
         existing.targetX = local.x;
         existing.targetY = local.y;
         existing.lastSeen = now;
