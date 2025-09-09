@@ -23,6 +23,8 @@ function injectCss() {
   const css = `
   .rc-cursor { position: absolute; pointer-events: none; transform: translate3d(0,0,0); will-change: transform, opacity; display:flex; align-items:center; gap:8px; }
   .rc-dot { width:12px;height:12px;border-radius:50%;box-shadow:0 0 8px rgba(0,0,0,0.25);transform:translate(-50%,-50%); flex:0 0 auto; }
+  .rc-pointer { width:24px; height:32px; display:inline-block; flex:0 0 auto; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25)); }
+  .rc-pointer svg { width:100%; height:100%; display:block; }
   .rc-badge { display:inline-block; background: rgba(0,0,0,0.75); color: #fff; padding:6px 10px; border-radius:10px; font-size:12px; margin-top:0; white-space:nowrap; flex:0 0 auto; }
   .rc-avatar { width:22px;height:22px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;font-weight:600;color:#fff;font-size:12px;margin-right:6px; flex:0 0 auto; }
   .rc-wrapper { display:flex; align-items:center; gap:6px; }
@@ -230,9 +232,18 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
       avatar.textContent = initials(c.displayName || c.userId);
     }
 
-    const dot = document.createElement('div');
-    dot.className = 'rc-dot';
-    dot.style.background = c.color || '#7c3aed';
+    // create a mouse-pointer shaped SVG instead of a simple dot
+    const pointer = document.createElement('div');
+    pointer.className = 'rc-pointer';
+    // SVG uses currentColor so we can tint with CSS color
+    pointer.innerHTML = `
+      <svg viewBox="0 0 24 32" width="24" height="32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path fill="currentColor" d="M1 1 L18 16 L11 17 L14 30 L9 31 L6 18 L1 1 Z"/>
+      </svg>
+    `;
+    pointer.style.color = c.color || '#7c3aed';
+    // position transform will be applied by wrapper translate3d; offset so tip aligns
+    pointer.style.transform = 'translate(-6px,-2px)';
 
     const badge = document.createElement('div');
     badge.className = 'rc-badge';
@@ -241,7 +252,8 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     inner.appendChild(avatar);
     inner.appendChild(badge);
 
-  wrapper.appendChild(dot);
+  // use pointer icon
+  wrapper.appendChild(pointer);
   wrapper.appendChild(inner);
 
   // compute initial viewport (client) coordinates for the cursor using root mapping
@@ -252,7 +264,7 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
   wrapper.style.top = '0px';
   wrapper.style.transform = `translate3d(${Math.round(vp.x)}px, ${Math.round(vp.y)}px, 0)`;
 
-  const state: CursorState = { el: wrapper, dot, badge, avatarEl: avatar, targetX: vp.x, targetY: vp.y, curX: vp.x, curY: vp.y, lastSeen: Date.now(), color: c.color };
+  const state: CursorState = { el: wrapper, dot: pointer as any, badge, avatarEl: avatar, targetX: vp.x, targetY: vp.y, curX: vp.x, curY: vp.y, lastSeen: Date.now(), color: c.color };
 
   if (options.dev) console.debug('[RemoteCursors] buildCursorEl appended for', c.userId, 'at', Math.round(vp.x), Math.round(vp.y));
 
@@ -314,7 +326,7 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     s.lastSeen = now;
     // update label/avatar/color quickly
     if (c.displayName) s.badge.textContent = c.displayName;
-    if (c.color) { s.dot.style.background = c.color; s.avatarEl.style.background = c.color; }
+  if (c.color) { try { (s.dot as HTMLElement).style.background = c.color; } catch (e) {} s.avatarEl.style.background = c.color; }
       if (options.dev) console.debug('[RemoteCursors] upsertCursor updated', key, 'target =>', Math.round(s.targetX), Math.round(s.targetY));
   }
 
