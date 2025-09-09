@@ -24,7 +24,7 @@ function injectCss() {
   .rc-cursor { position: absolute; pointer-events: none; transform: translate3d(0,0,0); will-change: transform, opacity; display:flex; align-items:center; gap:8px; }
   .rc-dot { width:12px;height:12px;border-radius:50%;box-shadow:0 0 8px rgba(0,0,0,0.25);transform:translate(-50%,-50%); flex:0 0 auto; }
   /* pointer is absolutely positioned so its tip can align with the coordinate (0,0) */
-  .rc-pointer { width:24px; height:32px; position:absolute; left:0; top:0; transform-origin: 0 0; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25)); pointer-events:none; }
+  .rc-pointer { width:18px; height:30px; position:absolute; left:0; top:0; transform-origin: 0 0; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25)); pointer-events:none; }
   .rc-pointer svg { width:100%; height:100%; display:block; }
   .rc-pointer { z-index: 1000001; }
   .rc-badge { display:inline-block; background: rgba(0,0,0,0.75); color: #fff; padding:6px 10px; border-radius:10px; font-size:12px; margin-top:0; white-space:nowrap; flex:0 0 auto; }
@@ -242,10 +242,10 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     // create a mouse-pointer shaped SVG element (use dot property name for compatibility)
     const pointer = document.createElement('div');
     pointer.className = 'rc-pointer';
-    // arrow-like mouse pointer SVG (tip at 0,0)
+    // slimmer, taller arrow pointer SVG (tip at 0,0) — steeper/narrower shape
     pointer.innerHTML = `
-      <svg viewBox="0 0 24 32" width="24" height="32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path fill="currentColor" d="M1 1 L1 27 L8 20 L12 30 L14 28 L10 18 L20 10 L1 1 Z" />
+      <svg viewBox="0 0 16 32" width="16" height="32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path fill="currentColor" d="M0 0 L0 26 L6 20 L10 30 L12 28 L8 18 L14 12 L0 0 Z" />
       </svg>
     `;
     // tint via currentColor
@@ -256,7 +256,7 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
   inner.appendChild(avatar);
   inner.appendChild(badge);
   // offset the badge/avatar so they don't overlap the absolutely-positioned pointer
-  inner.style.marginLeft = '30px';
+  inner.style.marginLeft = '24px';
 
     wrapper.appendChild(pointer);
     wrapper.appendChild(inner);
