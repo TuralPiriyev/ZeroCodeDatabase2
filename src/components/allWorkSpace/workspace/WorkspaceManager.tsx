@@ -68,14 +68,33 @@ const WorkspaceManager: React.FC<WorkspaceManagerProps> = ({ workspaceId }) => {
     if (!workspace) return;
     let rc: any = null;
     try {
-      // workspace root element exists in DOM with id `workspace-root-<id>`
-      // Pass the shared simpleWebSocketService instance so events are received by the overlay
-  // enable dev:true temporarily to surface normalized payloads and cursor counts
-  rc = initRemoteCursors(simpleWebSocketService, `#workspace-root-${workspace.id}`, { dev: true });
+      // Prefer a globally loaded, production-ready RemoteCursors integration (remote-cursors.js)
+      // If not available, fall back to the local initRemoteCursors module.
+      const globalRC = (window as any).RemoteCursors;
+      if (globalRC && typeof globalRC.attachRemoteCursorToSocket === 'function') {
+        rc = globalRC.attachRemoteCursorToSocket(simpleWebSocketService, {
+          eventName: 'cursor_update',
+          workspaceSelector: `#workspace-root-${workspace.id}`,
+          idleMs: 5000,
+          dev: true
+        });
+      } else {
+        // workspace root element exists in DOM with id `workspace-root-<id>`
+        // Pass the shared simpleWebSocketService instance so events are received by the overlay
+        // enable dev:true temporarily to surface normalized payloads and cursor counts
+        rc = initRemoteCursors(simpleWebSocketService, `#workspace-root-${workspace.id}`, { dev: true });
+      }
     } catch (e) {
       console.warn('Failed to init remote cursors overlay', e);
     }
-    return () => { try { rc && rc.destroy && rc.destroy(); } catch (e) {} };
+    return () => {
+      try {
+        if (!rc) return;
+        // global API returns { detach }, local init returns { destroy }
+        if (typeof rc.detach === 'function') rc.detach();
+        else if (typeof rc.destroy === 'function') rc.destroy();
+      } catch (e) {}
+    };
   }, [workspace]);
 
   // Initialize collaborationService when a shared schema is loaded
