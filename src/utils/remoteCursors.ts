@@ -79,8 +79,8 @@ export function normalizeCursorPayload(raw: any, dev = false): CanonicalCursor |
     const cursor = (cand.cursor && typeof cand.cursor === 'object') ? cand.cursor : null;
     const source = cursor || cand;
 
-  // extract identifiers (accept string or numeric ids from different shapes)
-  let userId: any = source.userId ?? source.uid ?? source.id ?? source.user?.id ?? source.userId;
+  // extract identifiers (accept string or numeric ids and username/name fallbacks)
+  let userId: any = source.userId ?? source.uid ?? source.id ?? source.user?.id ?? source.userId ?? source.username ?? source.name ?? source.user?.username;
   if (userId === undefined || userId === null) continue;
 
     const displayName = source.displayName || source.name || source.username || source.user?.displayName || source.user?.username || undefined;
@@ -281,9 +281,16 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
       clientX = c.x - window.scrollX;
       clientY = c.y - window.scrollY;
     } else {
-      // client coords are already viewport-relative
-      clientX = c.x;
-      clientY = c.y;
+      // client coords are usually viewport-relative, but some payloads send coordinates
+      // relative to the workspace root (small numbers). Heuristic: if x/y fit inside
+      // the root bounding box, treat them as root-local and map into viewport.
+      if (typeof c.x === 'number' && typeof c.y === 'number' && c.x >= 0 && c.y >= 0 && c.x <= rect.width && c.y <= rect.height) {
+        clientX = rect.left + c.x;
+        clientY = rect.top + c.y;
+      } else {
+        clientX = c.x;
+        clientY = c.y;
+      }
     }
     return { x: clientX, y: clientY };
   }
@@ -341,13 +348,14 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
     }
   // c is CanonicalCursor here
   if (options.dev) console.debug('[RemoteCursors] onCursorEvent normalized:', c);
-    const prev = lastProcessed.get(c.userId) || 0;
+  const prev = lastProcessed.get(c.userId) || 0;
     const now = Date.now();
     if (now - prev < minInterval) {
       // accept but don't force heavy updates; update target only
       const existing = cursors.get(c.userId);
       if (existing) {
-  const local = canonicalToViewport(c);
+        const local = canonicalToViewport(c);
+        if (options.dev) console.debug('[RemoteCursors] mapped viewport coords (throttle):', local);
         existing.targetX = local.x;
         existing.targetY = local.y;
         existing.lastSeen = now;
@@ -357,6 +365,8 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
       return;
     }
     lastProcessed.set(c.userId, now);
+    // log mapped coords then upsert
+    if (options.dev) console.debug('[RemoteCursors] mapped viewport coords:', canonicalToViewport(c));
     upsertCursor(c);
   };
 
@@ -372,7 +382,10 @@ export function initRemoteCursors(socket: SocketLike, workspaceRoot: Element | s
         const v = obj[k];
         if (v && typeof v === 'object') {
           const found = tolerantExtract(v);
-          if (found) return found;
+          if (found) {
+            if (options.dev) console.debug('[RemoteCursors] tolerantExtract found nested candidate for', Object.keys(obj || {}));
+            return found;
+          }
         }
       }
       return null;
