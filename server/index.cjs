@@ -21,6 +21,23 @@ async function start() {
 
   const app = express();
   app.use(bodyParser.json({ limit: '10mb' }));
+  // Allow cross-origin from frontend if needed
+  try {
+    const cors = require('cors');
+    app.use(cors());
+  } catch (e) {
+    // cors not installed; continue without CORS middleware
+    console.warn('cors module not available; cross-origin requests may be blocked');
+  }
+
+  // Mount AI DBQuery router so POST /api/ai/dbquery is served
+  try {
+    const dbqueryRouter = require('../src/api/dbquery');
+    app.use('/api/ai', dbqueryRouter);
+    console.log('Mounted AI router at /api/ai');
+  } catch (e) {
+    console.warn('Could not mount AI router:', e && e.message ? e.message : e);
+  }
 
   const server = http.createServer(app);
   const io = new socketIo.Server(server, { path: '/ws/replicate' });
@@ -138,7 +155,8 @@ async function start() {
     }
   });
 
-  server.listen(PORT, '127.0.0.1', () => {
+  // Listen on all interfaces so external requests (including API calls) are reachable
+  server.listen(PORT, () => {
     console.log('Server listening on', PORT);
   });
 }
