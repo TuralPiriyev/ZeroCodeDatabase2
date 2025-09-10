@@ -643,7 +643,7 @@ async function getPayPalAccessToken() {
 
 // Price map (USD) — adjust as needed
 const PLAN_PRICES = {
-  Pro: '9.99',
+  Pro: '1.00',
   Ultimate: '19.99'
 };
 
