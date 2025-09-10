@@ -175,61 +175,7 @@ const MultilingualChatInterface: React.FC = () => {
     }
   };
 
-  const generateAIResponse = (userInput: string, languageCode: string): string => {
-    const lowerInput = userInput.toLowerCase();
-    
-    // Language-specific responses
-    const responses = {
-      en: {
-        primaryKey: "For primary keys, choose a column that:\n\n• Has unique values for each row\n• Never changes\n• Is not null\n• Preferably short and simple\n\nConsider using an auto-incrementing integer (ID) or UUID if no natural primary key exists.",
-        manyToMany: "For many-to-many relationships:\n\n1. Create a junction/bridge table\n2. Include foreign keys from both related tables\n3. The combination of these foreign keys becomes the primary key\n4. Add any additional attributes specific to the relationship\n\nExample: Users ↔ Roles requires a UserRoles table with user_id and role_id.",
-        normalize: "Database normalization guidelines:\n\n• 1NF: Eliminate repeating groups\n• 2NF: Remove partial dependencies\n• 3NF: Eliminate transitive dependencies\n\nBenefits: Reduces redundancy, improves data integrity\nDrawbacks: May require more complex queries\n\nBalance normalization with performance needs.",
-        authentication: "For user authentication tables:\n\n• Store passwords as hashes (never plain text)\n• Include email, username, created_at, updated_at\n• Consider separate profile table for additional info\n• Add fields for email verification, password reset tokens\n• Include role/permission system if needed\n\nAlways follow security best practices!",
-        default: "That's a great question! For database design, consider:\n\n• Data relationships and cardinality\n• Normalization vs. denormalization trade-offs\n• Indexing strategies for performance\n• Data types and constraints\n• Future scalability needs\n\nCould you provide more specific details about your schema challenge?"
-      },
-      az: {
-        primaryKey: "Əsas açarlar üçün belə sütun seçin:\n\n• Hər sətir üçün unikal dəyərlərə malik\n• Heç vaxt dəyişməyən\n• Null olmayan\n• Tercihen qısa və sadə\n\nTəbii əsas açar yoxdursa, avtomatik artırılan tam ədəd (ID) və ya UUID istifadə etməyi düşünün.",
-        manyToMany: "Çox-çoxa əlaqələr üçün:\n\n1. Birləşdirici/körpü cədvəli yaradın\n2. Hər iki əlaqəli cədvəldən xarici açarları daxil edin\n3. Bu xarici açarların kombinasiyası əsas açar olur\n4. Əlaqəyə xas əlavə atributlar əlavə edin\n\nMisal: İstifadəçilər ↔ Rollar user_id və role_id ilə UserRoles cədvəli tələb edir.",
-        normalize: "Verilənlər bazası normallaşdırma qaydaları:\n\n• 1NF: Təkrarlanan qrupları aradan qaldırın\n• 2NF: Qismən asılılıqları aradan qaldırın\n• 3NF: Keçid asılılıqlarını aradan qaldırın\n\nFaydalar: Təkrarı azaldır, məlumat bütövlüyünü yaxşılaşdırır\nMənfi cəhətlər: Daha mürəkkəb sorğular tələb edə bilər\n\nNormallaşdırma ilə performans ehtiyaclarını balanslaşdırın.",
-        authentication: "İstifadəçi autentifikasiya cədvəlləri üçün:\n\n• Parolları hash kimi saxlayın (heç vaxt açıq mətn)\n• Email, username, created_at, updated_at daxil edin\n• Əlavə məlumat üçün ayrı profil cədvəli düşünün\n• Email təsdiqi, parol sıfırlama tokenləri üçün sahələr əlavə edin\n• Lazım olduqda rol/icazə sistemi daxil edin\n\nHəmişə təhlükəsizlik ən yaxşı təcrübələrini izləyin!",
-        default: "Bu əla sualdır! Verilənlər bazası dizaynı üçün nəzərə alın:\n\n• Məlumat əlaqələri və kardinallik\n• Normallaşdırma vs denormallaşdırma kompromisləri\n• Performans üçün indeksləşdirmə strategiyaları\n• Məlumat növləri və məhdudiyyətlər\n• Gələcək miqyaslanma ehtiyacları\n\nSchema probleminiz haqqında daha konkret təfərrüatlar verə bilərsinizmi?"
-      },
-      tr: {
-        primaryKey: "Birincil anahtarlar için şu özelliklere sahip sütunu seçin:\n\n• Her satır için benzersiz değerlere sahip\n• Hiç değişmeyen\n• Null olmayan\n• Tercihen kısa ve basit\n\nDoğal birincil anahtar yoksa, otomatik artan tamsayı (ID) veya UUID kullanmayı düşünün.",
-        manyToMany: "Çoktan-çoğa ilişkiler için:\n\n1. Bağlantı/köprü tablosu oluşturun\n2. İlgili her iki tablodan yabancı anahtarları dahil edin\n3. Bu yabancı anahtarların kombinasyonu birincil anahtar olur\n4. İlişkiye özgü ek öznitelikler ekleyin\n\nÖrnek: Kullanıcılar ↔ Roller, user_id ve role_id ile UserRoles tablosu gerektirir.",
-        normalize: "Veritabanı normalleştirme kuralları:\n\n• 1NF: Tekrarlayan grupları ortadan kaldırın\n• 2NF: Kısmi bağımlılıkları kaldırın\n• 3NF: Geçişli bağımlılıkları ortadan kaldırın\n\nFaydalar: Tekrarı azaltır, veri bütünlüğünü iyileştirir\nDezavantajlar: Daha karmaşık sorgular gerektirebilir\n\nNormalleştirme ile performans ihtiyaçlarını dengeleyin.",
-        authentication: "Kullanıcı kimlik doğrulama tabloları için:\n\n• Şifreleri hash olarak saklayın (asla düz metin)\n• Email, username, created_at, updated_at dahil edin\n• Ek bilgi için ayrı profil tablosu düşünün\n• Email doğrulama, şifre sıfırlama tokenları için alanlar ekleyin\n• Gerektiğinde rol/izin sistemi dahil edin\n\nHer zaman güvenlik en iyi uygulamalarını takip edin!",
-        default: "Bu harika bir soru! Veritabanı tasarımı için şunları düşünün:\n\n• Veri ilişkileri ve kardinalite\n• Normalleştirme vs denormalleştirme ödünleri\n• Performans için indeksleme stratejileri\n• Veri türleri ve kısıtlamalar\n• Gelecekteki ölçeklenebilirlik ihtiyaçları\n\nŞema zorluğunuz hakkında daha spesifik ayrıntılar verebilir misiniz?"
-      },
-      ru: {
-        primaryKey: "Для первичных ключей выберите столбец, который:\n\n• Имеет уникальные значения для каждой строки\n• Никогда не изменяется\n• Не является null\n• Предпочтительно короткий и простой\n\nРассмотрите использование автоинкрементного целого числа (ID) или UUID, если нет естественного первичного ключа.",
-        manyToMany: "Для отношений многие-ко-многим:\n\n1. Создайте соединительную/промежуточную таблицу\n2. Включите внешние ключи из обеих связанных таблиц\n3. Комбинация этих внешних ключей становится первичным ключом\n4. Добавьте любые дополнительные атрибуты, специфичные для отношения\n\nПример: Пользователи ↔ Роли требует таблицу UserRoles с user_id и role_id.",
-        normalize: "Руководящие принципы нормализации базы данных:\n\n• 1НФ: Устраните повторяющиеся группы\n• 2НФ: Удалите частичные зависимости\n• 3НФ: Устраните транзитивные зависимости\n\nПреимущества: Уменьшает избыточность, улучшает целостность данных\nНедостатки: Может потребовать более сложных запросов\n\nБалансируйте нормализацию с потребностями производительности.",
-        authentication: "Для таблиц аутентификации пользователей:\n\n• Храните пароли как хеши (никогда в открытом тексте)\n• Включите email, username, created_at, updated_at\n• Рассмотрите отдельную таблицу профиля для дополнительной информации\n• Добавьте поля для подтверждения email, токенов сброса пароля\n• Включите систему ролей/разрешений при необходимости\n\nВсегда следуйте лучшим практикам безопасности!",
-        default: "Это отличный вопрос! Для проектирования базы данных рассмотрите:\n\n• Отношения данных и кардинальность\n• Компромиссы нормализации vs денормализации\n• Стратегии индексирования для производительности\n• Типы данных и ограничения\n• Будущие потребности масштабируемости\n\nМожете ли вы предоставить более конкретные детали о вашей проблеме схемы?"
-      }
-    };
-
-    const langResponses = responses[languageCode as keyof typeof responses] || responses.en;
-    
-    if (lowerInput.includes('primary key') || lowerInput.includes('əsas açar') || lowerInput.includes('birincil anahtar') || lowerInput.includes('первичный ключ')) {
-      return langResponses.primaryKey;
-    }
-    
-    if (lowerInput.includes('many-to-many') || lowerInput.includes('çox-çoxa') || lowerInput.includes('çoktan-çoğa') || lowerInput.includes('многие-ко-многим')) {
-      return langResponses.manyToMany;
-    }
-    
-    if (lowerInput.includes('normalize') || lowerInput.includes('normallaş') || lowerInput.includes('normalleş') || lowerInput.includes('нормализ')) {
-      return langResponses.normalize;
-    }
-    
-    if (lowerInput.includes('authentication') || lowerInput.includes('autentifikasiya') || lowerInput.includes('kimlik doğrulama') || lowerInput.includes('аутентификация')) {
-      return langResponses.authentication;
-    }
-    
-    return langResponses.default;
-  };
+  // generateAIResponse removed: replaced with server-backed requests
 
   const handleSuggestionClick = (suggestion: string) => {
     if (!canUseFeature('canUseAI')) {
@@ -467,14 +413,19 @@ async function sendToAI(question: string, language: string, userId?: string, con
   if (userId) payload.userId = userId;
   if (contextSuggestions) payload.contextSuggestions = contextSuggestions;
 
-  const res = await fetch('/api/ai/dbquery', {
+  // Use configured API base when available (Vite): fall back to relative path
+  // This avoids 404s when the frontend is hosted on a different origin than the API.
+  const apiBase = (import.meta.env && (import.meta.env.VITE_API_BASE_URL as string)) || '';
+  const base = apiBase.replace(/\/$/, '');
+  const url = base ? `${base}/api/ai/dbquery` : '/api/ai/dbquery';
+
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
-    // In case of 503 we will throw to show service unavailable
     throw new Error('Service error');
   }
 
