@@ -414,10 +414,24 @@ async function sendToAI(question: string, language: string, userId?: string, con
   if (contextSuggestions) payload.contextSuggestions = contextSuggestions;
 
   // Use configured API base when available (Vite): fall back to relative path
-  // This avoids 404s when the frontend is hosted on a different origin than the API.
-  const apiBase = (import.meta.env && (import.meta.env.VITE_API_BASE_URL as string)) || '';
-  const base = apiBase.replace(/\/$/, '');
-  const url = base ? `${base}/api/ai/dbquery` : '/api/ai/dbquery';
+  // Normalize so we don't end up with duplicated segments like /api/api/ai/dbquery
+  const apiBaseRaw = (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.VITE_API_BASE_URL as string)) || '';
+  const apiBaseTrim = apiBaseRaw.replace(/\/$/, '');
+  let url: string;
+  if (!apiBaseTrim) {
+    url = '/api/ai/dbquery';
+  } else {
+    const lower = apiBaseTrim.toLowerCase();
+    if (lower.endsWith('/api/ai/dbquery')) {
+      url = apiBaseTrim;
+    } else if (lower.endsWith('/api/ai')) {
+      url = `${apiBaseTrim}/dbquery`;
+    } else if (lower.endsWith('/api')) {
+      url = `${apiBaseTrim}/ai/dbquery`;
+    } else {
+      url = `${apiBaseTrim}/api/ai/dbquery`;
+    }
+  }
 
   const res = await fetch(url, {
     method: 'POST',
