@@ -625,6 +625,110 @@ if (process.env.SMTP_HOST) {
   });
 }
 
+// --- PayPal helper + endpoints -------------------------------------------
+const PAYPAL_API_BASE = process.env.PAYPAL_API_BASE || 'https://api-m.sandbox.paypal.com';
+const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
+const PAYPAL_SECRET = process.env.PAYPAL_SECRET;
+
+async function getPayPalAccessToken() {
+  if (!PAYPAL_CLIENT_ID || !PAYPAL_SECRET) throw new Error('PayPal credentials not configured');
+  const tokenRes = await axios({
+    url: `${PAYPAL_API_BASE}/v1/oauth2/token`,
+    method: 'post',
+    auth: { username: PAYPAL_CLIENT_ID, password: PAYPAL_SECRET },
+    params: { grant_type: 'client_credentials' }
+  });
+  return tokenRes.data.access_token;
+}
+
+// Price map (USD) — adjust as needed
+const PLAN_PRICES = {
+  Pro: '9.99',
+  Ultimate: '19.99'
+};
+
+// Create PayPal order (frontend expects { orderID })
+app.post('/api/paypal/create-order', async (req, res) => {
+  try {
+    const { userId, plan } = req.body || {};
+    if (!userId || !plan) return res.status(400).json({ message: 'userId and plan are required' });
+    const planKey = String(plan).toLowerCase() === 'ultimate' ? 'Ultimate' : 'Pro';
+    const price = PLAN_PRICES[planKey];
+    if (!price) return res.status(400).json({ message: 'Unknown plan' });
+
+    const accessToken = await getPayPalAccessToken();
+    const orderRes = await axios.post(`${PAYPAL_API_BASE}/v2/checkout/orders`, {
+      intent: 'CAPTURE',
+      purchase_units: [{ amount: { currency_code: 'USD', value: price } }]
+    }, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
+    });
+
+    res.json({ orderID: orderRes.data.id });
+  } catch (err) {
+    console.error('create-order error:', err && err.message ? err.message : err);
+    res.status(500).json({ message: 'Failed to create PayPal order' });
+  }
+});
+
+// Capture PayPal order and update user's subscription
+app.post('/api/paypal/capture-order', async (req, res) => {
+  try {
+    const { orderID, userId, plan } = req.body || {};
+    if (!orderID || !userId || !plan) return res.status(400).json({ message: 'orderID, userId and plan are required' });
+    const planKey = String(plan).toLowerCase() === 'ultimate' ? 'Ultimate' : 'Pro';
+
+    const accessToken = await getPayPalAccessToken();
+    const capRes = await axios.post(`${PAYPAL_API_BASE}/v2/checkout/orders/${orderID}/capture`, {}, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
+    });
+
+    // Basic verification of capture status
+    const status = capRes.data && (capRes.data.status || (capRes.data.purchase_units && capRes.data.purchase_units[0] && capRes.data.purchase_units[0].payments && capRes.data.purchase_units[0].payments.captures && capRes.data.purchase_units[0].payments.captures[0] && capRes.data.purchase_units[0].payments.captures[0].status));
+    if (!status || (String(status).toUpperCase() !== 'COMPLETED' && String(status).toUpperCase() !== 'CAPTURED')) {
+      console.warn('PayPal capture returned non-complete status:', status);
+      return res.status(400).json({ message: 'Payment not completed', details: capRes.data });
+    }
+
+    // Update user subscription: set plan and expiresAt = now + 30 days
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.subscriptionPlan = planKey;
+    user.expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+    await user.save();
+
+    res.json({ success: true, expiresAt: user.expiresAt });
+  } catch (err) {
+    console.error('capture-order error:', err && err.message ? err.message : err);
+    res.status(500).json({ message: 'Failed to capture PayPal order' });
+  }
+});
+
+// Cron job: daily downgrade of expired subscriptions to Free
+try {
+  cron.schedule('0 0 * * *', async () => {
+    try {
+      const now = new Date();
+      const expiredUsers = await User.find({ expiresAt: { $lte: now }, subscriptionPlan: { $ne: 'Free' } });
+      if (expiredUsers && expiredUsers.length > 0) {
+        console.log(`⏳ Downgrading ${expiredUsers.length} expired subscription(s) to Free`);
+        for (const u of expiredUsers) {
+          u.subscriptionPlan = 'Free';
+          u.expiresAt = null;
+          await u.save();
+        }
+      }
+    } catch (e) {
+      console.error('Cron downgrade error:', e && e.message ? e.message : e);
+    }
+  });
+  console.log('✅ Subscription expiry cron scheduled (daily)');
+} catch (e) {
+  console.warn('Could not schedule subscription cron:', e && e.message ? e.message : e);
+}
+
+
 // Contact form endpoint
 app.post('/api/contact', async (req, res) => {
   const { name, email, message } = req.body;
