@@ -65,7 +65,13 @@ async function callOpenAIChat(messages, max_tokens = 800) {
   return j;
 }
 
-router.post('/', express.json(), async (req, res) => {
+// Lightweight health check for this router
+router.get('/health', (req, res) => {
+  return res.json({ status: 'ok' });
+});
+
+// Main endpoint: POST /api/ai/dbquery
+router.post('/dbquery', express.json(), async (req, res) => {
   const { question, language = 'en', userId, contextSuggestions } = req.body || {};
 
   if (!question || typeof question !== 'string') {
