@@ -154,9 +154,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const verifyCode = async (email: string, code: string): Promise<void> => {
     try {
       setAuthError(null);
-      // Mock verification for now
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      console.log('Code verified:', { email, code });
+      const response = await api.post('/auth/verify', { email, code });
+      if (response.data && response.data.user) {
+        const u = response.data.user;
+        setUser({
+          ...u,
+          color: generateUserColor(u.username),
+          isOnline: true,
+          lastSeen: new Date()
+        });
+      }
     } catch (error) {
       setAuthError('Invalid verification code');
       throw error;
@@ -166,7 +173,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const requestResend = async (email: string): Promise<void> => {
     try {
       setAuthError(null);
-      console.log('Resend requested for:', email);
+      await api.post('/auth/resend', { email });
     } catch (error) {
       setAuthError('Failed to resend code');
     }

@@ -11,6 +11,11 @@ const userSchema = new mongoose.Schema({
   expiresAt: { type: Date, default: null },
   isOnline:        { type: Boolean, default: false },
   lastSeen:        { type: Date, default: Date.now }
+  ,
+  // Email verification fields
+  isVerified: { type: Boolean, default: false },
+  emailVerificationCode: { type: String, default: null },
+  emailVerificationExpires: { type: Date, default: null }
 
 }, {
   timestamps: true
