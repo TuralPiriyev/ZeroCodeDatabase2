@@ -12,7 +12,8 @@ const PORT = process.env.PORT || 3000;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || '*';
 app.use(cors({ origin: FRONTEND_ORIGIN === '*' ? true : FRONTEND_ORIGIN }));
 
-app.use('/api/ai/dbquery', dbqueryRouter);
+// Mount the router at /api/ai so the router can define /dbquery
+app.use('/api/ai', dbqueryRouter);
 
 app.get('/_health', (req, res) => res.json({ status: 'ok' }));
 
