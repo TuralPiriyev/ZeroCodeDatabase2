@@ -231,6 +231,17 @@ router.post('/:workspaceId/invite', authenticate, async (req, res) => {
         invitedUser = await User.findOne({ username });
         console.log('👤 User validation result:', { username, exists: !!invitedUser });
         if (!invitedUser) return res.status(404).json({ error: 'User not found' });
+
+        // Enforce subscription requirement for team collaboration: invited user must be Ultimate
+        try {
+          const plan = invitedUser.subscriptionPlan || '';
+          if (String(plan).toLowerCase() !== 'ultimate') {
+            return res.status(400).json({ error: 'The entered user cannot use this feature.' });
+          }
+        } catch (e) {
+          // if any error reading subscription, do not allow invite as safe default
+          return res.status(400).json({ error: 'The entered user cannot use this feature.' });
+        }
       } else {
         console.log('📡 MongoDB not connected, allowing invitation for development');
       }
