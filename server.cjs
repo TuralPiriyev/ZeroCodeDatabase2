@@ -255,15 +255,38 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { username, email, password } = req.body;
-    const conflict = await User.findOne({ $or: [{ email }, { username }] });
+    const { username, email, password, fullName, phone } = req.body;
+    if (!fullName || !phone) return res.status(400).json({ message: 'Full name and phone are required' });
+    const conflict = await User.findOne({ $or: [{ email }, { username }, { phone }] });
     if (conflict) {
-      const field = conflict.email === email ? 'Email' : 'Username';
+      const field = (conflict.email === email && 'Email') || (conflict.username === username && 'Username') || (conflict.phone === phone && 'Phone');
       return res.status(400).json({ message: `${field} already registered` });
     }
     const hashed = await bcrypt.hash(password, 10);
-    const newUser = await new User({ username, email, password: hashed }).save();
-  const payload = { userId: newUser._id, email: newUser.email, username: newUser.username };
+    // create verification code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24h
+    const newUser = await new User({ username, email, password: hashed, fullName, phone, isVerified: false, emailVerificationCode: verificationCode, emailVerificationExpires: expires }).save();
+
+    // Attempt to send verification email
+    try {
+      if (!process.env.SMTP_HOST) console.warn('SMTP not configured, skipping sendMail');
+      else {
+        const mailRes = await transporter.sendMail({
+          from: `"ZeroCodeDB" <${process.env.SMTP_USER}>`,
+          to: email,
+          subject: 'Verify your email',
+          text: `Your verification code: ${verificationCode}`,
+          html: `<p>Your verification code: <strong>${verificationCode}</strong></p>`
+        });
+        console.log('Verification email sent:', mailRes && mailRes.messageId);
+      }
+    } catch (mailErr) {
+      console.error('Failed to send verification email:', mailErr && mailErr.message ? mailErr.message : mailErr);
+      // Do not fail registration if email fails; return created user but warn client
+    }
+
+    const payload = { userId: newUser._id, email: newUser.email, username: newUser.username };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '1d' });
     const uobj = newUser.toObject();
     delete uobj.password;
@@ -271,6 +294,84 @@ app.post('/api/auth/register', async (req, res) => {
   } catch (err) {
     console.error('Register error:', err);
     res.status(500).json({ message: 'Server error during registration' });
+  }
+});
+
+// Verify email code
+app.post('/api/auth/verify', async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) return res.status(400).json({ message: 'Email and code are required' });
+
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (user.isVerified) return res.json({ message: 'Already verified', user: user.toObject() });
+
+    if (!user.emailVerificationCode || !user.emailVerificationExpires) {
+      return res.status(400).json({ message: 'No verification code set for this user' });
+    }
+
+    if (new Date() > new Date(user.emailVerificationExpires)) {
+      return res.status(400).json({ message: 'Verification code expired' });
+    }
+
+    if (String(user.emailVerificationCode) !== String(code)) {
+      return res.status(400).json({ message: 'Invalid verification code' });
+    }
+
+    user.isVerified = true;
+    user.emailVerificationCode = null;
+    user.emailVerificationExpires = null;
+    await user.save();
+
+    const uobj = user.toObject();
+    delete uobj.password;
+    res.json({ message: 'Email verified', user: uobj });
+  } catch (err) {
+    console.error('Verify code error:', err);
+    res.status(500).json({ message: 'Server error during verification' });
+  }
+});
+
+// Resend verification code
+app.post('/api/auth/resend', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: 'Email is required' });
+
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (user.isVerified) return res.status(400).json({ message: 'User already verified' });
+
+    // generate new code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24h
+    user.emailVerificationCode = verificationCode;
+    user.emailVerificationExpires = expires;
+    await user.save();
+
+    try {
+      if (!process.env.SMTP_HOST) console.warn('SMTP not configured, skipping sendMail (resend)');
+      else {
+        const mailRes = await transporter.sendMail({
+          from: `"ZeroCodeDB" <${process.env.SMTP_USER}>`,
+          to: email,
+          subject: 'Your verification code',
+          text: `Your verification code: ${verificationCode}`,
+          html: `<p>Your verification code: <strong>${verificationCode}</strong></p>`
+        });
+        console.log('Resend verification email sent:', mailRes && mailRes.messageId);
+      }
+    } catch (mailErr) {
+      console.error('Failed to resend verification email:', mailErr && mailErr.message ? mailErr.message : mailErr);
+      // non-fatal
+    }
+
+    res.json({ message: 'Verification code resent (if SMTP configured)' });
+  } catch (err) {
+    console.error('Resend code error:', err);
+    res.status(500).json({ message: 'Server error during resend' });
   }
 });
 
