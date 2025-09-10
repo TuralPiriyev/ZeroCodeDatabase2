@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Lightbulb, Lock, Globe, Loader } from 'lucide-react';
 import { useSubscription } from '../../../context/SubscriptionContext';
+import { isLikelyDbQuestion } from '../../../utils/dbClassifier';
 
 interface Message {
   id: string;
@@ -114,24 +115,64 @@ const MultilingualChatInterface: React.FC = () => {
       timestamp: new Date(),
       language: selectedLanguage.code,
     };
-
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
-    setIsTyping(true);
 
-    // Simulate AI response with language-aware content
-    setTimeout(() => {
+    // Quick heuristic: if the classifier says it's unlikely and the question is short,
+    // immediately reject locally without calling the backend. For longer/uncertain inputs
+    // we still send to backend so the server can do a stronger model classification.
+    const trimmed = inputValue.trim();
+    const likely = isLikelyDbQuestion(trimmed);
+    const shortThreshold = 30;
+
+    if (!likely && trimmed.length < shortThreshold) {
+      // show localized rejection
+      const rejection = REJECTION_MESSAGES[selectedLanguage.code as keyof typeof REJECTION_MESSAGES] || REJECTION_MESSAGES.en;
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
-        content: generateAIResponse(inputValue, selectedLanguage.code),
+        content: rejection,
         sender: 'ai',
         timestamp: new Date(),
         language: selectedLanguage.code,
       };
-      
       setMessages(prev => [...prev, aiResponse]);
+      return;
+    }
+
+    setIsTyping(true);
+
+    try {
+      const contextSuggestions: string[] = [];
+      // If the typed question exactly equals one of the suggestion texts, send it as contextSuggestions
+      const currentSuggestions = suggestions[selectedLanguage.code as keyof typeof suggestions] || suggestions.en;
+      if (currentSuggestions.includes(trimmed)) {
+        contextSuggestions.push(trimmed);
+      }
+
+      const result = await sendToAI(trimmed, selectedLanguage.code, undefined, contextSuggestions.length ? contextSuggestions : undefined);
+
+      const aiResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        content: result.answer,
+        sender: 'ai',
+        timestamp: new Date(),
+        language: selectedLanguage.code,
+      };
+
+      setMessages(prev => [...prev, aiResponse]);
+    } catch (err) {
+      const svc = SERVICE_UNAVAILABLE[selectedLanguage.code as keyof typeof SERVICE_UNAVAILABLE] || SERVICE_UNAVAILABLE.en;
+      const aiResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        content: svc,
+        sender: 'ai',
+        timestamp: new Date(),
+        language: selectedLanguage.code,
+      };
+      setMessages(prev => [...prev, aiResponse]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   const generateAIResponse = (userInput: string, languageCode: string): string => {
@@ -196,7 +237,9 @@ const MultilingualChatInterface: React.FC = () => {
       setShowUpgradeModal(true);
       return;
     }
-    setInputValue(suggestion);
+  setInputValue(suggestion);
+  // If the suggestion is clicked we can auto-send it as a user message for convenience
+  // (maintain current UX: fill the input and let user press send)
   };
 
   const currentSuggestions = suggestions[selectedLanguage.code as keyof typeof suggestions] || suggestions.en;
@@ -405,5 +448,38 @@ const MultilingualChatInterface: React.FC = () => {
     </div>
   );
 };
+
+// Localized rejection and service messages (shared with server)
+const REJECTION_MESSAGES: Record<string, string> = {
+  en: "I only answer questions related to databases (SQL and database programming).",
+  az: "Mən yalnız verilənlər bazası (SQL və verilənlər bazası proqramlaşdırması) ilə bağlı suallara cavab verirəm.",
+  tr: "Sadece veritabanı (SQL ve veritabanı programlama) ile ilgili soruları cevaplıyorum.",
+  ru: "Я отвечаю только на вопросы, связанные с базами данных (SQL и программированием баз данных).",
+};
+
+const SERVICE_UNAVAILABLE: Record<string, string> = {
+  en: "Service temporarily unavailable. Try again later.",
+  az: "Xidmət müvəqqəti əlçatan deyil. Sonra yenidən cəhd edin.",
+};
+
+async function sendToAI(question: string, language: string, userId?: string, contextSuggestions?: string[]): Promise<{ answer: string }> {
+  const payload: any = { question, language };
+  if (userId) payload.userId = userId;
+  if (contextSuggestions) payload.contextSuggestions = contextSuggestions;
+
+  const res = await fetch('/api/ai/dbquery', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    // In case of 503 we will throw to show service unavailable
+    throw new Error('Service error');
+  }
+
+  const json = await res.json();
+  return { answer: json.answer };
+}
 
 export default MultilingualChatInterface;
