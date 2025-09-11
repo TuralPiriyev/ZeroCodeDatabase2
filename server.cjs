@@ -33,7 +33,7 @@ const yjsManager = require('./server/yjsManager.cjs');
 // Try to require AI handler (if present) so we can mount at known paths
 let aiHandler = null;
 try {
-  const aiRouter = require('./src/api/dbquery');
+  const aiRouter = require('./src/api/dbquery.cjs');
   aiHandler = aiRouter.handleDbQuery || null;
   console.log('AI handler loaded for potential root mount');
 } catch (e) {
@@ -173,7 +173,7 @@ app.use((req, res, next) => {
 
 // Deferred mount of AI router: do this after app and proxy normalization middleware
 try {
-  const aiRouter = require('./src/api/dbquery');
+  const aiRouter = require('./src/api/dbquery.cjs');
   // Keep a reference to the handler for root forwarding fallback
   aiHandler = aiRouter.handleDbQuery || aiHandler || null;
   app.use('/api/ai', aiRouter);
