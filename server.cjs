@@ -258,6 +258,31 @@ if (process.env.NODE_ENV === 'development') {
   });
 }
 
+// API debug middleware: logs incoming API requests and route registry snapshot.
+app.use('/api/*', (req, res, next) => {
+  try {
+    const routes = (app._router && app._router.stack)
+      ? app._router.stack.filter(r => r && r.route).map(r => Object.keys(r.route.methods).join(',').toUpperCase() + ' ' + r.route.path)
+      : [];
+
+    console.log('[API_DEBUG] incoming', req.method, req.originalUrl || req.url, 'path=', req.path);
+    console.log('[API_DEBUG] headers excerpt:', JSON.stringify({
+      host: req.headers.host,
+      origin: req.headers.origin,
+      'x-original-url': req.headers['x-original-url'],
+      'x-forwarded-url': req.headers['x-forwarded-url'],
+      'x-forwarded-uri': req.headers['x-forwarded-uri'],
+      referer: req.headers.referer
+    }));
+    console.log('[API_DEBUG] registered routes count:', routes.length);
+    // show first 30 routes for context
+    console.log('[API_DEBUG] routes sample:', routes.slice(0,30));
+  } catch (e) {
+    console.warn('API_DEBUG logging failed', e && e.message ? e.message : e);
+  }
+  next();
+});
+
 // API Routes - All under /api prefix
 app.use('/api/portfolios', authenticate, portfolioRoutes);
 app.use('/api/workspaces', authenticate, workspaceRoutes);
@@ -862,12 +887,23 @@ app.use('/api/*', (err, req, res, next) => {
 // 404 handler for API routes - Return JSON, not HTML
 app.use('/api/*', (req, res) => {
   console.log(`❌ API 404: ${req.method} ${req.path}`);
-  res.status(404).json({
-    error: 'API endpoint not found',
-    path: req.path,
-    method: req.method,
-    timestamp: new Date().toISOString()
-  });
+  const base = { error: 'API endpoint not found', path: req.path, method: req.method, timestamp: new Date().toISOString() };
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      const routes = (app._router && app._router.stack)
+        ? app._router.stack.filter(r => r && r.route).map(r => Object.keys(r.route.methods).join(',').toUpperCase() + ' ' + r.route.path)
+        : [];
+      base['registeredRoutesSample'] = routes.slice(0, 50);
+      base['requestHeaders'] = {
+        host: req.headers.host,
+        origin: req.headers.origin,
+        'x-original-url': req.headers['x-original-url'],
+        'x-forwarded-url': req.headers['x-forwarded-url'],
+        'x-forwarded-uri': req.headers['x-forwarded-uri'],
+      };
+    } catch (e) {}
+  }
+  res.status(404).json(base);
 });
 
 // Serve static files in production - ONLY for non-API routes
