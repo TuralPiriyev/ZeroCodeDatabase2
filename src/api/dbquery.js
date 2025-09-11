@@ -108,10 +108,9 @@ async function handleDbQuery(req, res) {
     return res.status(400).json({ answer: REJECTION_MESSAGES[language] || REJECTION_MESSAGES.en });
   }
 
-  // If contextSuggestions contains an exact match, prefer it
-  if (Array.isArray(contextSuggestions) && contextSuggestions.includes(question)) {
-    return res.json({ answer: question });
-  }
+  // Do not short-circuit by echoing the question when it appears in
+  // contextSuggestions. Let the model generate the localized/canned answer
+  // as part of the chat flow instead.
 
   try {
     // Step 1: quick model classification (YES/NO)

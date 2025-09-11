@@ -91,9 +91,10 @@ async function handleDbQuery(req, res) {
     return res.status(400).json({ answer: REJECTION_MESSAGES[language] || REJECTION_MESSAGES.en });
   }
 
-  if (Array.isArray(contextSuggestions) && contextSuggestions.includes(question)) {
-    return res.json({ answer: question });
-  }
+  // If the client supplied contextSuggestions, we no longer short-circuit by
+  // echoing the question. The model will be allowed to generate a proper
+  // database-focused answer (the SYSTEM_PROMPT prefers canned responses when
+  // available, but the handler should not return the literal question back).
 
   try {
     const systemPrompt = `You are Database Assistant. Answer only with YES or NO and a one-line reason.`;
