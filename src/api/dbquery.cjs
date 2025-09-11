@@ -149,6 +149,9 @@ async function handleDbQuery(req, res) {
       if (e.isBadKey) {
         return res.status(500).json({ error: 'OPENAI_API_KEY appears malformed. Please update environment variable without quotes/newlines.' });
       }
+      if (e.status === 429 || /quota/i.test(String(e.message))) {
+        return res.status(429).json({ error: 'OpenAI quota exceeded. Please check billing/usage.' });
+      }
       return res.status(503).json({ answer: SERVICE_UNAVAILABLE[language] || SERVICE_UNAVAILABLE.en });
     }
 
@@ -217,6 +220,9 @@ async function handleDbQuery(req, res) {
       safeLog('Answer generation failed:', e.message || e.toString());
       if (e.isBadKey) {
         return res.status(500).json({ error: 'OPENAI_API_KEY appears malformed. Please update environment variable without quotes/newlines.' });
+      }
+      if (e.status === 429 || /quota/i.test(String(e.message))) {
+        return res.status(429).json({ error: 'OpenAI quota exceeded. Please check billing/usage.' });
       }
       return res.status(503).json({ answer: SERVICE_UNAVAILABLE[language] || SERVICE_UNAVAILABLE.en });
     }

@@ -52,6 +52,8 @@ const SMTP_PORT = Number(process.env.SMTP_PORT);
 
 // Express setup
 const app = express();
+// When behind proxies (Render, Cloudflare), trust proxy to get correct remote addresses and protocol
+app.set('trust proxy', true);
 const server = http.createServer(app);
 
 // TEMPORARY DEBUG ROUTE (opt-in)
@@ -87,7 +89,11 @@ const io = socketIo(server, {
     methods: ['GET','POST'],
     credentials: true
   },
-  transports: ['websocket','polling']
+  transports: ['websocket','polling'],
+  // Accept older engine.io protocol if behind some proxies/load balancers
+  allowEIO3: true,
+  // Disable perMessageDeflate to avoid some proxy issues with large frames
+  perMessageDeflate: false
 });
 
 
@@ -271,12 +277,13 @@ app.post('/', (req, res, next) => {
 });
 
 // Dev-only unmatched request catcher: logs method, originalUrl, user-agent
+// NOTE: do not short-circuit; allow actual route handlers to run. Final 404 is handled later.
 if (process.env.NODE_ENV === 'development') {
   app.use((req, res, next) => {
     try {
       console.log('[DEV_UNMATCHED]', req.method, req.originalUrl, req.headers['user-agent'] || 'no-ua');
     } catch (e) {}
-    res.status(404).json({ error: 'API endpoint not found (dev)', path: req.originalUrl, method: req.method, debug: 'dev-token-123' });
+    return next();
   });
 }
 
