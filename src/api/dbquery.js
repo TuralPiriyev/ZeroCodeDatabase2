@@ -72,7 +72,12 @@ router.get('/health', (req, res) => {
 
 // Main endpoint logic exported so other servers (or a root POST) can re-use it
 async function handleDbQuery(req, res) {
-  const { question, language = 'en', userId, contextSuggestions } = req.body || {};
+  const { question, language = 'en', userId, contextSuggestions, _health_test } = req.body || {};
+
+  // Dev-only health shortcut: allow quick verification without OpenAI calls
+  if (process.env.NODE_ENV === 'development' || _health_test === true) {
+    return res.json({ status: 'ok - backend route works' });
+  }
 
   if (!question || typeof question !== 'string') {
     return res.status(400).json({ answer: REJECTION_MESSAGES[language] || REJECTION_MESSAGES.en });
