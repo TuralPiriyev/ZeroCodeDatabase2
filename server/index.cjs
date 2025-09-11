@@ -21,6 +21,13 @@ async function start() {
 
   const app = express();
   app.use(bodyParser.json({ limit: '10mb' }));
+  // Simple request logger to help debug routing in production
+  app.use((req, res, next) => {
+    try {
+      console.log('[REQ]', req.method, req.originalUrl);
+    } catch (e) {}
+    next();
+  });
   // Allow cross-origin from frontend if needed
   try {
     const cors = require('cors');
@@ -33,8 +40,11 @@ async function start() {
   // Mount AI DBQuery router so POST /api/ai/dbquery is served
   try {
     const dbqueryRouter = require('../src/api/dbquery');
-    app.use('/api/ai', dbqueryRouter);
-    console.log('Mounted AI router at /api/ai');
+  // Mount at multiple prefixes to tolerate proxy rewrites during debugging
+  app.use('/api/ai', dbqueryRouter);
+  app.use('/ai', dbqueryRouter);
+  app.use('/api', dbqueryRouter);
+  console.log('Mounted AI router at /api/ai, /ai, and /api');
   } catch (e) {
     console.warn('Could not mount AI router:', e && e.message ? e.message : e);
   }
