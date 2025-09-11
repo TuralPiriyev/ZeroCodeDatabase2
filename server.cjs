@@ -54,6 +54,28 @@ const SMTP_PORT = Number(process.env.SMTP_PORT);
 const app = express();
 const server = http.createServer(app);
 
+// TEMPORARY DEBUG ROUTE (opt-in)
+// Set FORCE_AI_DEBUG=true in the environment to enable this short-circuit
+if (process.env.FORCE_AI_DEBUG === 'true') {
+  app.post('/api/ai/dbquery', express.json(), (req, res) => {
+    try {
+      console.log('[TEMP_AI_DEBUG] incoming request to /api/ai/dbquery', {
+        path: req.path,
+        originalUrl: req.originalUrl,
+        bodyKeys: req.body ? Object.keys(req.body) : [],
+        headersSample: {
+          host: req.headers.host,
+          origin: req.headers.origin,
+          'x-original-url': req.headers['x-original-url'],
+          'x-forwarded-uri': req.headers['x-forwarded-uri']
+        }
+      });
+    } catch (e) { console.warn('[TEMP_AI_DEBUG] log error', e && e.message ? e.message : e); }
+    return res.json({ debug: 'TEMP_AI_DEBUG_ROUTE', ok: true, timestamp: new Date().toISOString() });
+  });
+  console.log('⚠️ TEMP_AI_DEBUG route enabled at /api/ai/dbquery (FORCE_AI_DEBUG=true)');
+}
+
 // Socket.IO setup with CORS
 const io = socketIo(server, {
   path: '/ws/portfolio-updates',   // frontend ilə eyni olmalıdır
