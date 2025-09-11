@@ -99,6 +99,40 @@ app.use((req, res, next) => {
   next();
 });
 
+// Proxy/header normalization middleware: some hosts/proxies rewrite the path to '/'
+// but add headers containing the original URI. Inspect common headers and
+// rewrite req.url so API routing still works.
+app.use((req, res, next) => {
+  try {
+    // Only run when request path is root; avoid interfering with normal routing
+    if (req.path === '/' || req.originalUrl === '/') {
+      const hdrs = req.headers;
+      const candidates = [
+        'x-original-url', 'x-original-uri', 'x-forwarded-url', 'x-rewrite-url',
+        'x-request-uri', 'x-forwarded-path', 'x-forwarded-prefix', 'x-proxy-url',
+        'x-url', 'x-forwarded-uri'
+      ];
+      for (const h of candidates) {
+        const val = hdrs[h];
+        if (!val) continue;
+        const s = Array.isArray(val) ? val[0] : String(val || '');
+        if (s.includes('/api/ai') || s.includes('/api/api/ai') || s.includes('/api/')) {
+          const orig = req.url;
+          // Extract path portion if header contains full URL
+          const m = s.match(/https?:\/\/[^/]+(\/.*)/);
+          const newPath = m ? m[1] : s;
+          req.url = newPath;
+          console.log('[PROXY_HEADER_REWRITE] header:', h, '-> rewriting', orig, 'to', req.url);
+          break;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Proxy header normalization error', e && e.message ? e.message : e);
+  }
+  next();
+});
+
 // MongoDB connection
 if (MONGO_URL) {
   mongoose
