@@ -33,13 +33,20 @@ function escapeRegExp(str) {
 }
 
 async function callOpenAIChat(messages, max_tokens = 800) {
-  if (!OPENAI_API_KEY) throw new Error('Missing OPENAI_API_KEY');
+  const key = (process.env.OPENAI_API_KEY || OPENAI_API_KEY || '').toString().trim();
+  if (!key) throw new Error('Missing OPENAI_API_KEY');
+  // Basic sanity: no whitespace or control characters allowed in header value
+  if (/\s/.test(key) || key.length > 500) {
+    throw new Error('Invalid OPENAI_API_KEY format');
+  }
 
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  let res;
+  try {
+    res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Authorization': `Bearer ${key}`,
     },
     body: JSON.stringify({
       model: MODEL,
@@ -48,6 +55,10 @@ async function callOpenAIChat(messages, max_tokens = 800) {
       temperature: 0.2,
     }),
   });
+  } catch (e) {
+    safeLog('OpenAI fetch error (likely malformed header or network issue):', e && e.message ? e.message : String(e));
+    throw e;
+  }
 
   if (!res.ok) {
     const text = await res.text();
@@ -109,6 +120,9 @@ async function handleDbQuery(req, res) {
       classifierResp = j.choices?.[0]?.message?.content || '';
     } catch (e) {
       safeLog('Classifier call failed: ', e.message || e.toString());
+      if (e && /Invalid OPENAI_API_KEY format|Missing OPENAI_API_KEY/i.test(e.message)) {
+        return res.status(500).json({ answer: 'Server misconfigured: invalid or missing OpenAI API key.' });
+      }
       return res.status(503).json({ answer: SERVICE_UNAVAILABLE[language] || SERVICE_UNAVAILABLE.en });
     }
 
@@ -175,6 +189,9 @@ async function handleDbQuery(req, res) {
       }
     } catch (e) {
       safeLog('Answer generation failed:', e.message || e.toString());
+      if (e && /Invalid OPENAI_API_KEY format|Missing OPENAI_API_KEY/i.test(e.message)) {
+        return res.status(500).json({ answer: 'Server misconfigured: invalid or missing OpenAI API key.' });
+      }
       return res.status(503).json({ answer: SERVICE_UNAVAILABLE[language] || SERVICE_UNAVAILABLE.en });
     }
 
