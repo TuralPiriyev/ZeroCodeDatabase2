@@ -72,6 +72,25 @@ router.get('/health', (req, res) => {
 
 // Main endpoint logic exported so other servers (or a root POST) can re-use it
 async function handleDbQuery(req, res) {
+  // Lightweight debug logging to help diagnose 404 / proxy rewrite issues in production.
+  try {
+    const hdr = req.headers || {};
+    const interesting = {
+      method: req.method,
+      path: req.originalUrl || req.url,
+      bodyKeys: req.body ? Object.keys(req.body) : [],
+      proxyHeaders: {
+        'x-original-url': hdr['x-original-url'],
+        'x-original-uri': hdr['x-original-uri'],
+        'x-forwarded-url': hdr['x-forwarded-url'],
+        'x-rewrite-url': hdr['x-rewrite-url'],
+        'x-request-uri': hdr['x-request-uri'],
+        'x-forwarded-uri': hdr['x-forwarded-uri'],
+      }
+    };
+    console.log('[AI_ROUTE] incoming', JSON.stringify(interesting));
+  } catch (e) {}
+
   const { question, language = 'en', userId, contextSuggestions, _health_test } = req.body || {};
 
   // Dev-only health shortcut: allow quick verification without OpenAI calls
@@ -144,8 +163,8 @@ async function handleDbQuery(req, res) {
 // Main endpoint: POST /api/ai/dbquery
 router.post('/dbquery', express.json(), handleDbQuery);
 
-// Export the handler for external mounts
-module.exports = router;
-module.exports.handleDbQuery = handleDbQuery;
+// Attach handler to router object so external code can forward to it
+router.handleDbQuery = handleDbQuery;
 
+// Export the router
 module.exports = router;
