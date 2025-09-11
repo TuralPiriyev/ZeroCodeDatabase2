@@ -39,18 +39,8 @@ try {
 } catch (e) {
   console.warn('AI handler not available for root mount:', e && e.message ? e.message : e);
 }
-
-// If aiRouter is available, mount it at /api/ai so deployed server handles requests
-try {
-  const aiRouter = require('./src/api/dbquery');
-  // Mount at /api/ai and tolerate other prefixes
-  app.use('/api/ai', aiRouter);
-  app.use('/ai', aiRouter);
-  app.use('/api', aiRouter);
-  console.log('Mounted AI router at /api/ai, /ai, and /api');
-} catch (e) {
-  console.warn('Could not mount AI router in server.cjs:', e && e.message ? e.message : e);
-}
+// NOTE: mounting the router requires `app` to exist. We defer mounting until
+// after Express app is created below (see deferred mount further down).
 
 // Configuration
 const PORT = Number(process.env.PORT) || 5000;
@@ -158,6 +148,20 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Deferred mount of AI router: do this after app and proxy normalization middleware
+try {
+  const aiRouter = require('./src/api/dbquery');
+  // Keep a reference to the handler for root forwarding fallback
+  aiHandler = aiRouter.handleDbQuery || aiHandler || null;
+  app.use('/api/ai', aiRouter);
+  app.use('/ai', aiRouter);
+  // Mounting at /api as a last-resort so /api/dbquery or similar paths may resolve
+  app.use('/api', aiRouter);
+  console.log('Mounted AI router at /api/ai, /ai, and /api (deferred mount)');
+} catch (e) {
+  console.warn('Could not mount AI router in server.cjs (deferred):', e && e.message ? e.message : e);
+}
 
 // MongoDB connection
 if (MONGO_URL) {
