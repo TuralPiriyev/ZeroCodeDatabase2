@@ -30,6 +30,16 @@ const Member = require('./src/models/Member.cjs');
 // Yjs manager (production helper)
 const yjsManager = require('./server/yjsManager.cjs');
 
+// Try to require AI handler (if present) so we can mount at known paths
+let aiHandler = null;
+try {
+  const aiRouter = require('./src/api/dbquery');
+  aiHandler = aiRouter.handleDbQuery || null;
+  console.log('AI handler loaded for potential root mount');
+} catch (e) {
+  console.warn('AI handler not available for root mount:', e && e.message ? e.message : e);
+}
+
 // Configuration
 const PORT = Number(process.env.PORT) || 5000;
 // Allow override of host binding (Render requires 0.0.0.0)
@@ -157,6 +167,21 @@ app.get('/api/health', (req, res) => {
     mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
     environment: process.env.NODE_ENV || 'development'
   });
+});
+
+// Defensive mount: if a request arrives at root with body that looks like an AI query
+// (for example when the proxy rewrites to '/'), we will detect and forward it.
+app.post('/', (req, res, next) => {
+  try {
+    // quick heuristic: body has 'question' and 'language'
+    if (aiHandler && req.body && typeof req.body.question === 'string') {
+      console.log('[ROOT_AI_FORWARD] forwarding to AI handler from path /');
+      return aiHandler(req, res, next);
+    }
+  } catch (e) {
+    console.warn('[ROOT_AI_FORWARD] error', e && e.message ? e.message : e);
+  }
+  next();
 });
 
 // API Routes - All under /api prefix
