@@ -40,6 +40,18 @@ try {
   console.warn('AI handler not available for root mount:', e && e.message ? e.message : e);
 }
 
+// If aiRouter is available, mount it at /api/ai so deployed server handles requests
+try {
+  const aiRouter = require('./src/api/dbquery');
+  // Mount at /api/ai and tolerate other prefixes
+  app.use('/api/ai', aiRouter);
+  app.use('/ai', aiRouter);
+  app.use('/api', aiRouter);
+  console.log('Mounted AI router at /api/ai, /ai, and /api');
+} catch (e) {
+  console.warn('Could not mount AI router in server.cjs:', e && e.message ? e.message : e);
+}
+
 // Configuration
 const PORT = Number(process.env.PORT) || 5000;
 // Allow override of host binding (Render requires 0.0.0.0)
@@ -98,6 +110,20 @@ app.use((req, res, next) => {
   console.log(`${req.method} ${req.path} - ${new Date().toISOString()}`);
   next();
 });
+
+// Dev-only extra logger and route enumeration
+if (process.env.NODE_ENV === 'development') {
+  app.use((req, res, next) => {
+    try { console.log('[DEV REQ]', req.method, req.originalUrl); } catch (e) {}
+    next();
+  });
+  try {
+    const routes = (app._router && app._router.stack)
+      ? app._router.stack.filter(r => r && r.route).map(r => Object.keys(r.route.methods).join(',').toUpperCase() + ' ' + r.route.path)
+      : [];
+    console.log('DEV Registered routes:', routes);
+  } catch (e) {}
+}
 
 // Proxy/header normalization middleware: some hosts/proxies rewrite the path to '/'
 // but add headers containing the original URI. Inspect common headers and
@@ -217,6 +243,16 @@ app.post('/', (req, res, next) => {
   }
   next();
 });
+
+// Dev-only unmatched request catcher: logs method, originalUrl, user-agent
+if (process.env.NODE_ENV === 'development') {
+  app.use((req, res, next) => {
+    try {
+      console.log('[DEV_UNMATCHED]', req.method, req.originalUrl, req.headers['user-agent'] || 'no-ua');
+    } catch (e) {}
+    res.status(404).json({ error: 'API endpoint not found (dev)', path: req.originalUrl, method: req.method, debug: 'dev-token-123' });
+  });
+}
 
 // API Routes - All under /api prefix
 app.use('/api/portfolios', authenticate, portfolioRoutes);
