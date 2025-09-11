@@ -420,9 +420,14 @@ async function sendToAI(question: string, language: string, userId?: string, con
   // Safe join to avoid double slashes
   const joinUrl = (base: string, path: string) => {
     if (!base) return path.startsWith('/') ? path : `/${path}`;
-    const b = base.replace(/\/$/, '');
-    const p = path.replace(/^\//, '');
-    return `${b}/${p}`;
+    let b = base.replace(/\/$/, '');
+    let p = path.replace(/^\//, '');
+    // Collapse duplicated '/api' segments: e.g., base endsWith('/api') and path startsWith('api/...')
+    if (/\/api\/?$/i.test(b) && /^api\//i.test(p)) {
+      p = p.replace(/^api\//i, '');
+    }
+    // Remove accidental duplicate slashes
+    return `${b}/${p}`.replace(/([^:])\/\/+/, '$1/');
   };
 
   const url = joinUrl(apiBase, '/api/ai/dbquery');

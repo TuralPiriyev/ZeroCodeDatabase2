@@ -29,6 +29,18 @@ async function start() {
     next();
   });
 
+  // Normalize common path mistakes from proxies or frontends, e.g. '/api/api/...' -> '/api/...'
+  app.use((req, res, next) => {
+    try {
+      if (/\/api\/api\//i.test(req.url)) {
+        const orig = req.url;
+        req.url = req.url.replace(/\/api\/api\//i, '/api/');
+        console.log('[PATH_NORMALIZE] Rewriting', orig, '->', req.url);
+      }
+    } catch (e) {}
+    next();
+  });
+
   // Track whether the AI router was mounted successfully
   let aiRouterMounted = false;
 
