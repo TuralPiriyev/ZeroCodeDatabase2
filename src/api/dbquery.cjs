@@ -7,7 +7,24 @@ const fetch = require('node-fetch');
 
 require('dotenv').config();
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+// Normalize OPENAI_API_KEY: trim, strip surrounding quotes, and reject if it
+// contains whitespace/newlines which will make it an illegal HTTP header value.
+function normalizeOpenAiKey(raw) {
+  if (!raw) return '';
+  let s = String(raw).trim();
+  // Remove surrounding quotes if accidentally wrapped
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  // If contains any whitespace or control chars, treat as invalid
+  if (/\s/.test(s)) {
+    console.warn('[AI_ROUTE] OPENAI_API_KEY appears malformed (contains whitespace/newline). Please set it as a single token without quotes or newlines.');
+    return '';
+  }
+  return s;
+}
+
+const OPENAI_API_KEY = normalizeOpenAiKey(process.env.OPENAI_API_KEY);
 const MODEL = process.env.AI_MODEL || 'gpt-4o-mini';
 
 const REJECTION_MESSAGES = {
@@ -33,40 +50,43 @@ function escapeRegExp(str) {
 }
 
 async function callOpenAIChat(messages, max_tokens = 800) {
-  const key = (process.env.OPENAI_API_KEY || OPENAI_API_KEY || '').toString().trim();
-  if (!key) throw new Error('Missing OPENAI_API_KEY');
-  // Basic sanity: no whitespace or control characters allowed in header value
-  if (/\s/.test(key) || key.length > 500) {
-    throw new Error('Invalid OPENAI_API_KEY format');
-  }
+  if (!OPENAI_API_KEY) throw new Error('Missing OPENAI_API_KEY');
 
-  let res;
   try {
-    res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages,
-      max_tokens,
-      temperature: 0.2,
-    }),
-  });
-  } catch (e) {
-    safeLog('OpenAI fetch error (likely malformed header or network issue):', e && e.message ? e.message : String(e));
-    throw e;
-  }
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages,
+        max_tokens,
+        temperature: 0.2,
+      }),
+    });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`OpenAI error: ${res.status} ${text}`);
-  }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '<no body>');
+      const err = new Error(`OpenAI error: ${res.status} ${String(text).slice(0, 200)}`);
+      err.status = res.status;
+      throw err;
+    }
 
-  const j = await res.json();
-  return j;
+    const j = await res.json();
+    return j;
+  } catch (err) {
+    // Re-throw with extra context for callers to decide how to respond
+    safeLog('[AI_ROUTE] callOpenAIChat error:', err && err.message ? err.message : String(err));
+    // If header value caused fetch to throw, provide clearer guidance
+    if (/illegal HTTP header value|Invalid header/.test(String(err.message))) {
+      const e2 = new Error('OPENAI_API_KEY appears to be malformed (contains illegal characters). Please set it without quotes/newlines.');
+      e2.isBadKey = true;
+      throw e2;
+    }
+    throw err;
+  }
 }
 
 router.get('/health', (req, res) => {
@@ -102,6 +122,12 @@ async function handleDbQuery(req, res) {
     return res.status(400).json({ answer: REJECTION_MESSAGES[language] || REJECTION_MESSAGES.en });
   }
 
+  // Validate OPENAI key early and return a clear error if missing/malformed
+  if (!OPENAI_API_KEY) {
+    safeLog('[AI_ROUTE] Missing or malformed OPENAI_API_KEY');
+    return res.status(500).json({ error: 'Server misconfiguration: OPENAI_API_KEY not set or malformed' });
+  }
+
   // If the client supplied contextSuggestions, we no longer short-circuit by
   // echoing the question. The model will be allowed to generate a proper
   // database-focused answer (the SYSTEM_PROMPT prefers canned responses when
@@ -120,8 +146,8 @@ async function handleDbQuery(req, res) {
       classifierResp = j.choices?.[0]?.message?.content || '';
     } catch (e) {
       safeLog('Classifier call failed: ', e.message || e.toString());
-      if (e && /Invalid OPENAI_API_KEY format|Missing OPENAI_API_KEY/i.test(e.message)) {
-        return res.status(500).json({ answer: 'Server misconfigured: invalid or missing OpenAI API key.' });
+      if (e.isBadKey) {
+        return res.status(500).json({ error: 'OPENAI_API_KEY appears malformed. Please update environment variable without quotes/newlines.' });
       }
       return res.status(503).json({ answer: SERVICE_UNAVAILABLE[language] || SERVICE_UNAVAILABLE.en });
     }
@@ -189,8 +215,8 @@ async function handleDbQuery(req, res) {
       }
     } catch (e) {
       safeLog('Answer generation failed:', e.message || e.toString());
-      if (e && /Invalid OPENAI_API_KEY format|Missing OPENAI_API_KEY/i.test(e.message)) {
-        return res.status(500).json({ answer: 'Server misconfigured: invalid or missing OpenAI API key.' });
+      if (e.isBadKey) {
+        return res.status(500).json({ error: 'OPENAI_API_KEY appears malformed. Please update environment variable without quotes/newlines.' });
       }
       return res.status(503).json({ answer: SERVICE_UNAVAILABLE[language] || SERVICE_UNAVAILABLE.en });
     }
