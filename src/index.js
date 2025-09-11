@@ -12,8 +12,35 @@ const PORT = process.env.PORT || 3000;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || '*';
 app.use(cors({ origin: FRONTEND_ORIGIN === '*' ? true : FRONTEND_ORIGIN }));
 
+// Dev-only request logger
+if (process.env.NODE_ENV === 'development') {
+  app.use((req, res, next) => {
+    try { console.log('[REQ]', req.method, req.originalUrl); } catch (e) {}
+    next();
+  });
+}
+
 // Mount the router at /api/ai so the router can define /dbquery
 app.use('/api/ai', dbqueryRouter);
+
+// Dev-only route enumeration
+if (process.env.NODE_ENV === 'development') {
+  try {
+    const routes = (app._router && app._router.stack)
+      ? app._router.stack.filter(r => r && r.route).map(r => Object.keys(r.route.methods).join(',').toUpperCase() + ' ' + r.route.path)
+      : [];
+    console.log('Registered routes:', routes);
+  } catch (e) {}
+}
+
+// Dev-only unmatched request catcher for debugging
+if (process.env.NODE_ENV === 'development') {
+  app.use((req, res, next) => {
+    // If no route matched, this will run; log minimal info and return JSON
+    // Note: keep secret data out of logs
+    res.status(404).json({ error: 'API endpoint not found (dev)', path: req.originalUrl, method: req.method });
+  });
+}
 
 app.get('/_health', (req, res) => res.json({ status: 'ok' }));
 
