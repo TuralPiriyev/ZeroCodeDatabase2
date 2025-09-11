@@ -70,8 +70,8 @@ router.get('/health', (req, res) => {
   return res.json({ status: 'ok' });
 });
 
-// Main endpoint: POST /api/ai/dbquery
-router.post('/dbquery', express.json(), async (req, res) => {
+// Main endpoint logic exported so other servers (or a root POST) can re-use it
+async function handleDbQuery(req, res) {
   const { question, language = 'en', userId, contextSuggestions } = req.body || {};
 
   if (!question || typeof question !== 'string') {
@@ -134,6 +134,13 @@ router.post('/dbquery', express.json(), async (req, res) => {
     safeLog('Unexpected error in /api/ai/dbquery:', err && err.message ? err.message : String(err));
     return res.status(503).json({ answer: SERVICE_UNAVAILABLE.en });
   }
-});
+}
+
+// Main endpoint: POST /api/ai/dbquery
+router.post('/dbquery', express.json(), handleDbQuery);
+
+// Export the handler for external mounts
+module.exports = router;
+module.exports.handleDbQuery = handleDbQuery;
 
 module.exports = router;
