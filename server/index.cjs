@@ -68,7 +68,11 @@ async function start() {
   try {
     const dbqueryRouter = require('../src/api/dbquery');
   // Mount at multiple prefixes to tolerate proxy rewrites during debugging
-  app.use('/api/ai', dbqueryRouter);
+  // Log any hits at the mount point before delegating to the router
+  app.use('/api/ai', (req, res, next) => {
+    try { console.log('[AI_MOUNT_HIT]', req.method, req.originalUrl); } catch (e) {}
+    next();
+  }, dbqueryRouter);
   app.use('/ai', dbqueryRouter);
   app.use('/api', dbqueryRouter);
   aiRouterMounted = true;
@@ -76,6 +80,22 @@ async function start() {
   } catch (e) {
     console.warn('Could not mount AI router:', e && e.message ? e.message : e);
   }
+
+  // If a request reaches /api/ai but no route matched inside the router,
+  // return a clear JSON 404 and log it. This will help detect mismatched paths
+  // or route-handler errors during production debugging.
+  app.use('/api/ai', (req, res) => {
+    try { console.log('[AI_NO_MATCH]', req.method, req.originalUrl); } catch (e) {}
+    res.status(404).json({ error: 'No AI handler matched this path on server', path: req.originalUrl });
+  });
+
+  // Log list of top-level routes (helpful after deploy)
+  try {
+    const routes = (app._router && app._router.stack)
+      ? app._router.stack.filter(r => r && r.route).map(r => Object.keys(r.route.methods).join(',').toUpperCase() + ' ' + r.route.path)
+      : [];
+    console.log('Registered routes:', routes);
+  } catch (e) {}
 
   const server = http.createServer(app);
   const io = new socketIo.Server(server, { path: '/ws/replicate' });
