@@ -412,25 +412,30 @@ async function sendToAI(question: string, language: string, userId?: string, con
   const payload: any = { question, language };
   if (userId) payload.userId = userId;
   if (contextSuggestions) payload.contextSuggestions = contextSuggestions;
+  // Determine API base from environment (CRA: REACT_APP_API_BASE, Vite: VITE_API_BASE_URL)
+  const reactBase = (typeof process !== 'undefined' && process.env && (process.env.REACT_APP_API_BASE as string)) || '';
+  const viteBase = (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.VITE_API_BASE_URL as string)) || '';
+  const apiBase = (reactBase || viteBase || '').toString();
 
-  // Use configured API base when available (Vite): fall back to relative path
-  // Normalize so we don't end up with duplicated segments like /api/api/ai/dbquery
-  const apiBaseRaw = (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.VITE_API_BASE_URL as string)) || '';
-  const apiBaseTrim = apiBaseRaw.replace(/\/$/, '');
-  let url: string;
-  if (!apiBaseTrim) {
-    url = '/api/ai/dbquery';
-  } else {
-    const lower = apiBaseTrim.toLowerCase();
-    if (lower.endsWith('/api/ai/dbquery')) {
-      url = apiBaseTrim;
-    } else if (lower.endsWith('/api/ai')) {
-      url = `${apiBaseTrim}/dbquery`;
-    } else if (lower.endsWith('/api')) {
-      url = `${apiBaseTrim}/ai/dbquery`;
-    } else {
-      url = `${apiBaseTrim}/api/ai/dbquery`;
-    }
+  // Safe join to avoid double slashes
+  const joinUrl = (base: string, path: string) => {
+    if (!base) return path.startsWith('/') ? path : `/${path}`;
+    const b = base.replace(/\/$/, '');
+    const p = path.replace(/^\//, '');
+    return `${b}/${p}`;
+  };
+
+  const url = joinUrl(apiBase, '/api/ai/dbquery');
+
+  // Dev-only logging to help debug 404s; does not print secrets
+  if ((typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development') || (typeof window !== 'undefined' && (window as any).__DEV__)) {
+    // __DEV__ can be set in client dev environments if needed
+    try {
+      // Avoid logging sensitive fields; payload here doesn't contain secrets
+      // but we still only log in development
+      // eslint-disable-next-line no-console
+      console.log('[MultilingualChat] POST', url, payload);
+    } catch (e) {}
   }
 
   const res = await fetch(url, {
@@ -440,11 +445,18 @@ async function sendToAI(question: string, language: string, userId?: string, con
   });
 
   if (!res.ok) {
+    // In development provide some debug text
+    if ((typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development')) {
+      const txt = await res.text().catch(() => '');
+      // eslint-disable-next-line no-console
+      console.error('[MultilingualChat] fetch error', res.status, txt);
+    }
     throw new Error('Service error');
   }
 
   const json = await res.json();
-  return { answer: json.answer };
+  // support health responder or answer payload
+  return { answer: (json.answer as string) || (json.status as string) || '' };
 }
 
 export default MultilingualChatInterface;

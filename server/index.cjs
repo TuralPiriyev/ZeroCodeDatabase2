@@ -28,6 +28,21 @@ async function start() {
     } catch (e) {}
     next();
   });
+
+  // Track whether the AI router was mounted successfully
+  let aiRouterMounted = false;
+
+  // Capture direct POSTs to the expected production path and provide a helpful
+  // debug response when the AI router isn't mounted. This helps diagnose 404s
+  // caused by the router not being loaded or by proxy path rewrites.
+  app.post('/api/ai/dbquery', (req, res, next) => {
+    try {
+      console.log('[AI_CAPTURE]', req.method, req.originalUrl, 'bodyKeys=', Object.keys(req.body || {}));
+    } catch (e) {}
+    if (aiRouterMounted) return next();
+    // If the router isn't mounted, return a clear JSON response instead of a vague 404
+    return res.status(502).json({ error: 'AI router not mounted on this server instance', triedPath: req.originalUrl });
+  });
   // Allow cross-origin from frontend if needed
   try {
     const cors = require('cors');
@@ -44,6 +59,7 @@ async function start() {
   app.use('/api/ai', dbqueryRouter);
   app.use('/ai', dbqueryRouter);
   app.use('/api', dbqueryRouter);
+  aiRouterMounted = true;
   console.log('Mounted AI router at /api/ai, /ai, and /api');
   } catch (e) {
     console.warn('Could not mount AI router:', e && e.message ? e.message : e);
