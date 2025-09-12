@@ -16,7 +16,7 @@ const TableBuilder: React.FC = () => {
   });
 
   const dataTypes = [
-    'VARCHAR(255)',
+    'NVARCHAR(255)',
     'INT',
     'BIGINT',
     'DECIMAL(10,2)',
@@ -148,15 +148,65 @@ const TableBuilder: React.FC = () => {
                   />
 
                   {/* Data Type */}
-                  <select
-                    value={column.type}
-                    onChange={(e) => updateColumn(index, { type: e.target.value })}
-                    className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-                  >
-                    {dataTypes.map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={column.type}
+                      onChange={(e) => updateColumn(index, { type: e.target.value })}
+                      className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+                    >
+                      {dataTypes.map(type => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                      <option value="NVARCHAR_CUSTOM">NVARCHAR (custom)</option>
+                      <option value="DECIMAL_CUSTOM">DECIMAL (custom)</option>
+                    </select>
+
+                    {column.type === 'NVARCHAR_CUSTOM' && (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          placeholder="length or 0 for MAX"
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            const newType = v <= 0 ? 'NVARCHAR(MAX)' : `NVARCHAR(${v})`;
+                            updateColumn(index, { type: newType });
+                          }}
+                          className="w-32 px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                    )}
+
+                    {column.type === 'DECIMAL_CUSTOM' && (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          max={38}
+                          placeholder="precision"
+                          onChange={(e) => {
+                            const p = Number(e.target.value) || 10;
+                            const s = 2;
+                            updateColumn(index, { type: `DECIMAL(${p},${s})` });
+                          }}
+                          className="w-20 px-2 py-1 border rounded text-sm"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          placeholder="scale"
+                          onChange={(e) => {
+                            const s = Number(e.target.value) || 0;
+                            // parse existing precision from current type
+                            const match = String(column.type).match(/DECIMAL\((\d+),(\d+)\)/i);
+                            const p = match ? Number(match[1]) : 10;
+                            updateColumn(index, { type: `DECIMAL(${p},${s})` });
+                          }}
+                          className="w-20 px-2 py-1 border rounded text-sm"
+                        />
+                      </div>
+                    )}
+                  </div>
 
                   {/* Default Value */}
                   <input
