@@ -266,7 +266,12 @@ const SmartExportManager: React.FC = () => {
         const modifiers = [];
         if (col.isPrimaryKey) modifiers.push('@id');
         if (col.isUnique) modifiers.push('@unique');
-        if (col.defaultValue) modifiers.push(`@default(${col.defaultValue})`);
+        if (col.defaultValue) {
+          // Use default as-is (Prisma will accept functions/literals). Strip surrounding quotes if present
+          const dv = String(col.defaultValue);
+          const stripped = dv.replace(/^'(.*)'$/, '$1');
+          modifiers.push(`@default(${stripped})`);
+        }
         
         content += `  ${col.name} ${prismaType}${col.nullable ? '?' : ''} ${modifiers.join(' ')}\n`;
       });
