@@ -1,143 +1,3 @@
-import React, { useState } from 'react';
-import { Plus, Trash2, Key, Link2 } from 'lucide-react';
-import { useDatabase, Column } from '../../../context/DatabaseContext';
-import { v4 as uuidv4 } from 'uuid';
-
-interface TableBuilderState {
-  name: string;
-  columns: Omit<Column, 'id'>[];
-}
-
-const TableBuilder: React.FC = () => {
-  const { addTable } = useDatabase();
-  const [table, setTable] = useState<TableBuilderState>({
-    name: '',
-    columns: [],
-  });
-
-  const dataTypes = [
-    'NVARCHAR(255)',
-    'INT',
-    'BIGINT',
-    'DECIMAL(10,2)',
-    'BOOLEAN',
-    'DATE',
-    'DATETIME',
-    'TIMESTAMP',
-    'TEXT',
-    'JSON',
-  ];
-
-  const addColumn = () => {
-    setTable(prev => ({
-      ...prev,
-      columns: [
-        ...prev.columns,
-        {
-          name: '',
-          type: 'VARCHAR(255)',
-          nullable: true,
-          isPrimaryKey: false,
-        },
-      ],
-    }));
-  };
-
-  const removeColumn = (index: number) => {
-    setTable(prev => ({
-      ...prev,
-      columns: prev.columns.filter((_, i) => i !== index),
-    }));
-  };
-
-  const updateColumn = (index: number, updates: Partial<Omit<Column, 'id'>>) => {
-    setTable(prev => ({
-      ...prev,
-      columns: prev.columns.map((col, i) => 
-        i === index ? { ...col, ...updates } : col
-      ),
-    }));
-  };
-
-  const createTable = () => {
-    if (!table.name.trim() || table.columns.length === 0) {
-      return;
-    }
-
-    const newTable = {
-      name: table.name,
-      columns: table.columns.map(col => ({ ...col, id: uuidv4() })),
-      position: { x: 100, y: 100 },
-    };
-
-    addTable(newTable);
-    
-    // Reset form
-    setTable({ name: '', columns: [] });
-  };
-
-  return (
-    <div className="h-full flex flex-col p-4">
-      <div className="mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Create New Table
-        </h3>
-        
-        {/* Table Name */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Table Name
-          </label>
-          <input
-            type="text"
-            value={table.name}
-            onChange={(e) => setTable(prev => ({ ...prev, name: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-            placeholder="Enter table name"
-          />
-        </div>
-
-        {/* Add Column Button */}
-        <button
-          onClick={addColumn}
-          className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg transition-colors duration-200 mb-4"
-        >
-          <Plus className="w-4 h-4" />
-          Add Column
-        </button>
-      </div>
-
-      {/* Columns List */}
-      <div className="flex-1 overflow-y-auto mb-4">
-        {table.columns.length === 0 ? (
-          <div className="text-center py-8">
-            <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Plus className="w-8 h-8 text-gray-400" />
-            </div>
-            <p className="text-gray-500 dark:text-gray-400">
-              No columns yet. Add your first column to get started.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {table.columns.map((column, index) => (
-              <div
-                key={index}
-                className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Column {index + 1}
-                  </span>
-                  <button
-                    onClick={() => removeColumn(index)}
-                    className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3">
                   {/* Column Name */}
                   <input
                     type="text"
@@ -155,57 +15,79 @@ const TableBuilder: React.FC = () => {
                       className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
                     >
                       {dataTypes.map(type => (
-                        <option key={type} value={type}>{type}</option>
-                      ))}
-                      <option value="NVARCHAR_CUSTOM">NVARCHAR (custom)</option>
-                      <option value="DECIMAL_CUSTOM">DECIMAL (custom)</option>
+                          <option key={type} value={type}>{type}</option>
+                        ))}
+                        <option value="NVARCHAR">NVARCHAR</option>
+                        <option value="VARCHAR">VARCHAR</option>
+                        <option value="DECIMAL">DECIMAL</option>
                     </select>
+                    </div>
+                    {/* Inline editors for NVARCHAR/VARCHAR length and DECIMAL precision/scale */}
+                    {(() => {
+                      const tRaw = String(column.type || '');
+                      const t = tRaw.toUpperCase();
+                      if (t.startsWith('NVARCHAR') || t.startsWith('VARCHAR')) {
+                        // extract existing length if present
+                        const m = t.match(/^(N?VARCHAR)\s*\(([^)]+)\)/i);
+                        const base = m ? m[1].toUpperCase() : (t.startsWith('N') ? 'NVARCHAR' : 'VARCHAR');
+                        const existing = m ? m[2] : '';
+                        return (
+                          <div className="flex items-center gap-2 mt-2">
+                            <label className="text-sm text-gray-700 dark:text-gray-300">Length</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. 255 or MAX"
+                              defaultValue={existing}
+                              onBlur={(e) => {
+                                const v = String(e.target.value || '').trim().toUpperCase();
+                                const newType = (v === 'MAX' || v === '') ? `${base}(MAX)` : `${base}(${Number(v) || 0})`;
+                                updateColumn(index, { type: newType });
+                              }}
+                              className="w-32 px-2 py-1 border rounded text-sm"
+                            />
+                          </div>
+                        );
+                      }
 
-                    {column.type === 'NVARCHAR_CUSTOM' && (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={1}
-                          placeholder="length or 0 for MAX"
-                          onChange={(e) => {
-                            const v = Number(e.target.value);
-                            const newType = v <= 0 ? 'NVARCHAR(MAX)' : `NVARCHAR(${v})`;
-                            updateColumn(index, { type: newType });
-                          }}
-                          className="w-32 px-2 py-1 border rounded text-sm"
-                        />
-                      </div>
-                    )}
+                      if (t.startsWith('DECIMAL')) {
+                        const m = t.match(/^DECIMAL\s*\((\d+)\s*,\s*(\d+)\)/i);
+                        const prec = m ? Number(m[1]) : 10;
+                        const scale = m ? Number(m[2]) : 2;
+                        return (
+                          <div className="flex items-center gap-2 mt-2">
+                            <label className="text-sm text-gray-700 dark:text-gray-300">Precision</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={38}
+                              defaultValue={prec}
+                              onBlur={(e) => {
+                                const p = Number(e.target.value) || prec;
+                                const s = scale;
+                                updateColumn(index, { type: `DECIMAL(${p},${s})` });
+                              }}
+                              className="w-20 px-2 py-1 border rounded text-sm"
+                            />
+                            <label className="text-sm text-gray-700 dark:text-gray-300">Scale</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={38}
+                              defaultValue={scale}
+                              onBlur={(e) => {
+                                const s = Number(e.target.value);
+                                const pMatch = String(column.type).match(/DECIMAL\((\d+),(\d+)\)/i);
+                                const p = pMatch ? Number(pMatch[1]) : 10;
+                                updateColumn(index, { type: `DECIMAL(${p},${s})` });
+                              }}
+                              className="w-20 px-2 py-1 border rounded text-sm"
+                            />
+                          </div>
+                        );
+                      }
 
-                    {column.type === 'DECIMAL_CUSTOM' && (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={1}
-                          max={38}
-                          placeholder="precision"
-                          onChange={(e) => {
-                            const p = Number(e.target.value) || 10;
-                            const s = 2;
-                            updateColumn(index, { type: `DECIMAL(${p},${s})` });
-                          }}
-                          className="w-20 px-2 py-1 border rounded text-sm"
-                        />
-                        <input
-                          type="number"
-                          min={0}
-                          placeholder="scale"
-                          onChange={(e) => {
-                            const s = Number(e.target.value) || 0;
-                            // parse existing precision from current type
-                            const match = String(column.type).match(/DECIMAL\((\d+),(\d+)\)/i);
-                            const p = match ? Number(match[1]) : 10;
-                            updateColumn(index, { type: `DECIMAL(${p},${s})` });
-                          }}
-                          className="w-20 px-2 py-1 border rounded text-sm"
-                        />
-                      </div>
-                    )}
+                      return null;
+                    })()}
                   </div>
 
                   {/* Default Value */}
@@ -268,6 +150,6 @@ const TableBuilder: React.FC = () => {
       </button>
     </div>
   );
-};
 
+// export default TableBuilder; // Removed stray export statement
 export default TableBuilder;
