@@ -1,95 +1,131 @@
-# UI Patches and Exporter Improvements
 
-This document describes the frontend patches to implement the requested exporter and UI fixes. It contains code snippets (React + TypeScript) and mapping rules for the backend generator.
+# UI Patches, Exporter Enhancements and Migration Guidance
 
-## 1) Type Picker enhancement
+This file contains concrete frontend patches, generator mapping rules, event names, validation requirements, and a reference to a non-destructive migration plan. Integrate these snippets into `src/components/allWorkSpace/*` (EnhancedTableBuilder, TableNode, SmartExportManager) and generator in `SmartExportManager.tsx`.
 
-- Add controls for custom length and precision/scale.
-- For text types: allow integer length 1..4000 and `MAX`.
-- For decimal: precision 1..38 and scale 0..precision.
+## 1) TypePicker (detailed)
 
-Example TSX snippet (concept):
+Requirements
+- For text: type selector (NVARCHAR preferred), preset length buttons (50,100,255), and a custom integer input 1..4000 plus `MAX` option.
+- For decimal: precision input (1..38) and scale input (0..precision). Show quick-presets (18,2) but allow custom.
+
+Component sketch (to be wired into existing Table/Column UI):
 
 ```tsx
-// TypePicker.tsx (concept)
-export function TypePicker({ value, onChange }) {
-  const [type, setType] = useState(value.type || 'NVARCHAR');
-  const [length, setLength] = useState<number | 'MAX'>(value.length || 255);
-  const [precision, setPrecision] = useState(value.precision || 18);
-  const [scale, setScale] = useState(value.scale || 2);
+// src/components/allWorkSpace/tools/TypePicker.tsx (concept)
+import React from 'react';
 
-  // render UI with preset buttons and custom inputs
+export function TypePicker({ columnMeta, onChange }) {
+  // columnMeta: { type, length, precision, scale }
+  // onChange should emit updated metadata used by generator
+  return (
+    <div>
+      {/* Type select */}
+      {/* If NVARCHAR selected show length presets + custom input + MAX */}
+      {/* If DECIMAL show precision & scale inputs with validation */}
+    </div>
+  );
 }
 ```
 
-Generator mapping (backend):
+Generator mapping rules (backend)
+- Text -> if length === 'MAX' -> `NVARCHAR(MAX)`; else `NVARCHAR(<len>)`.
+- Decimal -> `DECIMAL(<precision>,<scale>)` with validation 1<=precision<=38, 0<=scale<=precision. Default DECIMAL(18,2).
 
-- If type === 'NVARCHAR' and length === 'MAX' -> `NVARCHAR(MAX)`
-- If type === 'NVARCHAR' and numeric length -> `NVARCHAR(<len>)`
-- If type === 'DECIMAL' -> `DECIMAL(<precision>,<scale>)`
+Validation
+- Client + server: enforce numeric ranges, required when type needs them.
 
-## 2) Default Value Editor
+## 2) Default Value Editor (detailed)
 
-- Two modes: Static and Function. When function selected, don't quote value in SQL.
+Requirements
+- Mode toggle: Static vs Function.
+- Function dropdown includes: GETDATE(), SYSUTCDATETIME(), NEWID(), CURRENT_TIMESTAMP, USER_NAME().
+- If Function chosen, generator must emit unquoted default (e.g., DEFAULT GETDATE()).
 
 Snippet (concept):
 
 ```tsx
-// DefaultEditor.tsx
+// DefaultEditor.tsx (concept)
 const functions = ['GETDATE()', 'SYSUTCDATETIME()', 'NEWID()', 'CURRENT_TIMESTAMP', 'USER_NAME()'];
 
-function DefaultEditor({ mode, value, onChange }) {
-  // mode: 'static'|'function'
-  // if function, show dropdown of functions
+export function DefaultEditor({ mode, value, onChange }) {
+  // render radio toggle for mode, static input or functions dropdown
 }
 ```
 
-Generator rule:
+Generator rule
+- if defaultMode === 'function' -> emit DEFAULT <FUNCTION> (no quotes)
+- if static -> perform type-aware quoting/validation
 
-- If defaultMode === 'function' -> emit `DEFAULT GETDATE()` (no quotes)
-- Else -> quote literals appropriately (numbers/bit/date checks enforced)
+## 3) FK Add / Canvas auto-draw
 
-## 3) FK auto-draw & event
+Problem: after Add FK + Save table, canvas didn't draw relationship.
 
-- When user adds FK and saves table, emit `relationship:added` event with payload:
+Solution (event-driven)
+- When a table save operation persists a new FK, dispatch an event and a redux action:
+
+Event name and payload
+- Event: `relationship:added`
+- Payload: { childTableId, parentTableId, childCol, parentCol, constraintName }
+
+Redux-style action snippet
 
 ```ts
-{ fromTableId, toTableId, fromCol, toCol, constraintName }
+// actions/relationship.ts
+export const RELATIONSHIP_ADDED = 'RELATIONSHIP_ADDED';
+export const relationshipAdded = (payload) => ({ type: RELATIONSHIP_ADDED, payload });
 ```
 
-- Canvas should subscribe and call `canvas.addRelationship(payload)`.
+Integration points
+- In table save flow (where backend returns FK created), call `dispatch(relationshipAdded(payload))` and also `emit('relationship:added', payload)` on any internal event bus.
+- Canvas subscriber: `useEffect(() => { subscribe('relationship:added', canvas.addRelationship) }, [])`.
 
-Snippet (Redux-ish):
+Conservative behavior
+- If FK creation fails server-side, do not draw connector and show the error to user.
 
-```ts
-// actions.ts
-export const relationshipAdded = (payload) => ({ type: 'RELATIONSHIP_ADDED', payload });
+## 4) Export header / filename
 
-// reducer.ts
-case 'RELATIONSHIP_ADDED':
-  // update relationships list
+- Add `Schema name` input into Export modal. If empty: use `EXPORTED_DB_${timestamp}`.
+- Prepend SQL with:
 
-// Table save flow
-dispatch(relationshipAdded(payload));
-
-// Canvas listener
-useEffect(() => subscribe('relationship:added', canvas.addRelationship), []);
+```
+CREATE DATABASE [EXPORTED_DB_YYYYMMDD_HHMMSS];
+GO
+USE [EXPORTED_DB_YYYYMMDD_HHMMSS];
+GO
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+GO
 ```
 
-Event names: `relationship:added`, `schema:exported`
+## 5) Validation (client & server)
 
-## 4) Export header
+- Length inputs: 1..4000 or MAX.
+- Decimal: precision 1..38, scale 0..precision.
+- Default static values must match column type (number, bit, string, datetime). Server validates as final guard.
 
-- If `schemaName` absent, set default `EXPORTED_DB_<timestamp>` in exporter.
+## 6) Migration guidance (non-destructive)
 
-## 5) Validation
+Do NOT alter live tables destructively. For identity additions or column type changes recommend non-destructive migration:
+- Add new column (e.g., NewProductId INT IDENTITY(1,1)) and backfill appropriately.
+- Introduce triggers or application-level mapping while migrating.
+- See `patches/non_destructive_migration_plan.sql` for a suggested sequence and TODO markers for manual review.
 
-- Client and server side validation for length/precision inputs and default value types.
+## 7) Event names & wiring summary
 
-## Tests
+- relationship:added — when FK created
+- schema:exported — when an export is generated (payload: { schemaName, generatedAt, fileName })
 
-- Add unit tests for TypePicker behavior and DefaultEditor function selection.
+## 8) Tests to add
 
----
+- Unit tests for TypePicker — ensure values map to NVARCHAR(len) or NVARCHAR(MAX) and decimal maps to DECIMAL(p,s).
+- Unit tests for DefaultEditor — ensure function selection results in unquoted SQL.
+- Integration test for save-FK flow — ensure `relationship:added` dispatched and canvas draws connector.
 
-Notes: these snippets are intentionally minimal and intended to be integrated into `src/components/allWorkSpace/tools/*` and the generator in `SmartExportManager.tsx`.
+## 9) Manual review / TODO handling
+
+- Ambiguous FK references are not auto-applied — they are listed in `change_log.json` under `manual_review_ambiguous_fk`. Add TODO comments in generated SQL near ambiguous cases.
+
+----
+
+See also: `patches/non_destructive_migration_plan.sql`.

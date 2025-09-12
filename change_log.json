@@ -2,39 +2,92 @@
   "generated_at": "2025-09-12T00:00:00Z",
   "issues": [
     {
+      "id": "missing_database_header",
       "type": "missing_database_header",
       "severity": "info",
-      "description": "Export did not include CREATE DATABASE/USE header. Header added.",
-      "before": "-- no database header",
-      "after": "CREATE DATABASE [EXPORTED_DB_YYYYMMDD_HHMMSS]; USE [EXPORTED_DB_YYYYMMDD_HHMMSS];"
+      "description": "Export did not include CREATE DATABASE/USE header. Header added at top of output.",
+      "example_before": "-- no database header",
+      "example_after": "CREATE DATABASE [EXPORTED_DB_YYYYMMDD_HHMMSS]; GO; USE [EXPORTED_DB_YYYYMMDD_HHMMSS]; GO;"
     },
     {
-      "type": "primary_key_identity_missing",
+      "id": "primary_key_identity_missing",
+      "type": "identity_added",
       "severity": "high",
-      "description": "INT PRIMARY KEY columns without IDENTITY were made IDENTITY(1,1).",
-      "before": "id INT PRIMARY KEY",
-      "after": "id INT PRIMARY KEY IDENTITY(1,1)"
+      "description": "INT PRIMARY KEY columns without IDENTITY were changed to include IDENTITY(1,1) by default. If this is destructive for live data, see migration plan in patches/non_destructive_migration_plan.sql",
+      "example_before": "id INT PRIMARY KEY",
+      "example_after": "id INT PRIMARY KEY IDENTITY(1,1)"
     },
     {
-      "type": "varchar_unicode",
+      "id": "varchar_to_nvarchar",
+      "type": "type_change",
       "severity": "medium",
-      "description": "All VARCHAR types converted to NVARCHAR for Unicode support.",
-      "before": "VARCHAR(100)",
-      "after": "NVARCHAR(100)"
+      "description": "All VARCHAR types converted to NVARCHAR to ensure Unicode support. Custom lengths preserved (including MAX).",
+      "example_before": "VARCHAR(255)",
+      "example_after": "NVARCHAR(255)"
     },
     {
-      "type": "datetime_precision",
+      "id": "datetime_to_datetime2",
+      "type": "type_change",
       "severity": "low",
-      "description": "DATETIME converted to DATETIME2; default functions unquoted.",
-      "before": "created_at DATETIME DEFAULT 'GETDATE()'",
-      "after": "created_at DATETIME2 DEFAULT GETDATE()"
+      "description": "DATETIME columns converted to DATETIME2 for higher precision. Default timestamp functions unquoted (GETDATE(), SYSUTCDATETIME()).",
+      "example_before": "CreatedAt DATETIME DEFAULT 'GETDATE()'",
+      "example_after": "CreatedAt DATETIME2 DEFAULT GETDATE()"
     },
     {
-      "type": "fk_direction",
+      "id": "decimal_defaults",
+      "type": "decimal_default",
+      "severity": "medium",
+      "description": "Columns with DECIMAL and no precision/scale now default to DECIMAL(18,2). If metadata specifies precision/scale, those are preserved.",
+      "example_before": "Price DECIMAL",
+      "example_after": "Price DECIMAL(18,2)"
+    },
+    {
+      "id": "computed_and_triggers",
+      "type": "computed_trigger",
+      "severity": "medium",
+      "description": "OrderItems.LineTotal converted to computed persisted column. Orders.TotalAmount is maintained by an AFTER INSERT, UPDATE, DELETE trigger to keep persisted totals in sync. For high-volume systems consider batched aggregate updates instead (documented in ui_patches.md).",
+      "example_before": "OrderItems.LineTotal stored as column or absent",
+      "example_after": "LineTotal AS (Quantity * UnitPrice) PERSISTED; + TRIGGER TRG_OrderItems_Update_Order_Total"
+    },
+    {
+      "id": "check_constraints_added",
+      "type": "check_constraints",
+      "severity": "medium",
+      "description": "Added CHECK constraints for common numeric fields to prevent negative values (Price >= 0, StockQty >= 0, Quantity > 0, PaidAmount >= 0).",
+      "example_before": "StockQty INT NOT NULL DEFAULT '0'",
+      "example_after": "StockQty INT NOT NULL DEFAULT (0) CHECK (StockQty >= 0)"
+    },
+    {
+      "id": "fk_direction_fix",
+      "type": "foreign_key_fix",
       "severity": "high",
-      "description": "Foreign keys normalized to child -> parent and renamed with convention FK_<Child>_<Parent>_<Col>",
-      "before": "ALTER TABLE Categories ADD FOREIGN KEY (CategoryId) REFERENCES Products(ProductId)",
-      "after": "ALTER TABLE Products ADD CONSTRAINT FK_Products_Categories_CategoryId FOREIGN KEY (CategoryId) REFERENCES dbo.Categories(CategoryId)"
+      "description": "Normalized foreign keys to child -> parent and applied naming convention FK_<ChildTable>_<ParentTable>_<ChildCol>. Default ON DELETE NO ACTION. Ambiguous FKs require manual_review and are noted below.",
+      "example_before": "ALTER TABLE Categories ADD FOREIGN KEY (CategoryId) REFERENCES Products(ProductId)",
+      "example_after": "ALTER TABLE Products ADD CONSTRAINT FK_Products_Categories_CategoryId FOREIGN KEY (CategoryId) REFERENCES dbo.Categories(CategoryId) ON DELETE NO ACTION"
+    },
+    {
+      "id": "email_unique_filtered",
+      "type": "index_added",
+      "severity": "low",
+      "description": "If Email column is intended unique but nullable, added filtered unique index UX_Customers_Email ON ... WHERE Email IS NOT NULL. Alternative suggestion: make Email NOT NULL.",
+      "example_before": "Email VARCHAR(100) NULL",
+      "example_after": "Email NVARCHAR(320) NULL + CREATE UNIQUE INDEX UX_Customers_Email ON dbo.Customers(Email) WHERE Email IS NOT NULL"
+    },
+    {
+      "id": "fk_indexes",
+      "type": "index_added",
+      "severity": "low",
+      "description": "Added nonclustered indexes on all FK columns (IX_<Table>_<Col>) to improve join performance.",
+      "example_before": "no index on FK column",
+      "example_after": "CREATE INDEX IX_Orders_CustomerId ON dbo.Orders(CustomerId)"
+    },
+    {
+      "id": "manual_review_ambiguous_fk",
+      "type": "manual_review",
+      "severity": "high",
+      "description": "Ambiguous or conflicting foreign key references detected in the input. These were NOT auto-applied to avoid data corruption; see detailed notes and TODOs in ui_patches.md and patches/non_destructive_migration_plan.sql.",
+      "example_before": "ALTER TABLE X ADD FOREIGN KEY (...) REFERENCES Y(...)",
+      "example_after": "-- TODO: manual review required."
     }
   ]
 }
