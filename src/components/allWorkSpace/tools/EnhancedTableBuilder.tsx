@@ -431,6 +431,28 @@ const EnhancedTableBuilder: React.FC = () => {
                     <span className="text-gray-700 dark:text-gray-300">Primary Key</span>
                   </label>
 
+                  {/* Identity controls appear when Primary Key is selected */}
+                  {column.isPrimaryKey && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm text-gray-700 dark:text-gray-300">Identity</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={(column as any).identity?.seed ?? 1}
+                        onChange={(e) => updateColumn(index, { identity: { ...(column as any).identity, seed: Number(e.target.value) } })}
+                        className="w-20 px-2 py-1 border rounded text-sm"
+                      />
+                      <span className="text-sm">,</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={(column as any).identity?.increment ?? 1}
+                        onChange={(e) => updateColumn(index, { identity: { ...(column as any).identity, increment: Number(e.target.value) } })}
+                        className="w-20 px-2 py-1 border rounded text-sm"
+                      />
+                    </div>
+                  )}
+
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -440,6 +462,33 @@ const EnhancedTableBuilder: React.FC = () => {
                     />
                     <span className="text-gray-700 dark:text-gray-300">Unique</span>
                   </label>
+                </div>
+
+                {/* Default Function Picker */}
+                <div className="mt-3">
+                  <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Default</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={column.defaultValue || ''}
+                      onChange={(e) => updateColumn(index, { defaultValue: e.target.value })}
+                      placeholder="e.g. GETDATE() or 'anonymous' or 1"
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm"
+                    />
+                    <select
+                      value={column.defaultValue || ''}
+                      onChange={(e) => updateColumn(index, { defaultValue: e.target.value })}
+                      className="px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-white text-sm"
+                    >
+                      <option value="">Functions...</option>
+                      <option value="GETDATE()">GETDATE()</option>
+                      <option value="SYSUTCDATETIME()">SYSUTCDATETIME()</option>
+                      <option value="NEWID()">NEWID()</option>
+                      <option value="CURRENT_TIMESTAMP">CURRENT_TIMESTAMP</option>
+                      <option value="0">0</option>
+                      <option value="1">1</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             ))}

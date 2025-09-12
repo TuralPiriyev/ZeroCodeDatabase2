@@ -9,6 +9,35 @@ import * as Y from 'yjs';
 import { apiService } from '../services/apiService';
 import { simpleWebSocketService } from '../services/simpleWebSocketService';
 
+// Helper: decide how to render default values in SQL (avoid quoting functions and numbers)
+const KNOWN_SQL_FUNCTIONS = [
+  'GETDATE()', 'SYSUTCDATETIME()', 'NEWID()', 'CURRENT_TIMESTAMP', 'GETUTCDATE()', 'SYSDATETIME()', 'SUSER_SNAME()'
+];
+
+function looksLikeNumber(val: string | undefined) {
+  if (!val) return false;
+  return /^-?\d+(?:\.\d+)?$/.test(val.trim());
+}
+
+function looksLikeFunctionCall(val: string | undefined) {
+  if (!val) return false;
+  const v = val.trim().toUpperCase();
+  if (KNOWN_SQL_FUNCTIONS.includes(v)) return true;
+  // simple heuristic: NAME(...) pattern
+  return /^[A-Z0-9_]+\s*\(.*\)$/.test(v);
+}
+
+function formatDefaultValueForSQL(val: string | undefined) {
+  if (val === undefined || val === null || String(val).trim() === '') return undefined;
+  const s = String(val).trim();
+  if (looksLikeNumber(s)) return s;
+  if (looksLikeFunctionCall(s)) return s; // leave unquoted
+  // allow boolean literals
+  if (/^(true|false)$/i.test(s)) return s.toUpperCase();
+  // otherwise quote as string, escaping single quotes
+  return `'${s.replace(/'/g, "''")}'`;
+}
+
 export interface Column {
   id: string;
   name: string;
@@ -21,6 +50,7 @@ export interface Column {
   referencedColumn?: string;
   isUnique?: boolean;
   isIndexed?: boolean;
+  identity?: { seed?: number; increment?: number };
 }
 
 export interface Table {
@@ -332,9 +362,14 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
         // Create tables
         schema.tables.forEach(table => {
           const columnDefs = table.columns.map(col => {
+            // Use identity metadata if present
             let def = `${col.name} ${col.type}`;
+            if (col.identity) {
+              def += ` IDENTITY(${col.identity.seed || 1},${col.identity.increment || 1})`;
+            }
             if (!col.nullable) def += ' NOT NULL';
-            if (col.defaultValue) def += ` DEFAULT '${col.defaultValue}'`;
+            const formattedDefault = formatDefaultValueForSQL(col.defaultValue);
+            if (formattedDefault !== undefined) def += ` DEFAULT ${formattedDefault}`;
             if (col.isPrimaryKey) def += ' PRIMARY KEY';
             return def;
           }).join(', ');
@@ -967,8 +1002,12 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     if (sqlEngine) {
       const columnDefs = newTable.columns.map(col => {
         let def = `${col.name} ${col.type}`;
+        if (col.identity) {
+          def += ` IDENTITY(${col.identity.seed || 1},${col.identity.increment || 1})`;
+        }
         if (!col.nullable) def += ' NOT NULL';
-        if (col.defaultValue) def += ` DEFAULT '${col.defaultValue}'`;
+        const formattedDefault = formatDefaultValueForSQL(col.defaultValue);
+        if (formattedDefault !== undefined) def += ` DEFAULT ${formattedDefault}`;
         if (col.isPrimaryKey) def += ' PRIMARY KEY';
         return def;
       }).join(', ');
@@ -1055,8 +1094,12 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     if (sqlEngine) {
       const columnDefs = newTable.columns.map(col => {
         let def = `${col.name} ${col.type}`;
+        if (col.identity) {
+          def += ` IDENTITY(${col.identity.seed || 1},${col.identity.increment || 1})`;
+        }
         if (!col.nullable) def += ' NOT NULL';
-        if (col.defaultValue) def += ` DEFAULT '${col.defaultValue}'`;
+        const formattedDefault = formatDefaultValueForSQL(col.defaultValue);
+        if (formattedDefault !== undefined) def += ` DEFAULT ${formattedDefault}`;
         if (col.isPrimaryKey) def += ' PRIMARY KEY';
         return def;
       }).join(', ');
@@ -1086,9 +1129,11 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       case 'ADD_COLUMN':
         const newColumn: Column = { ...data, id: uuidv4() };
         newColumns.push(newColumn);
-        alterSQL = `ALTER TABLE ${table.name} ADD COLUMN ${newColumn.name} ${newColumn.type}`;
-        if (!newColumn.nullable) alterSQL += ' NOT NULL';
-        if (newColumn.defaultValue) alterSQL += ` DEFAULT '${newColumn.defaultValue}'`;
+  alterSQL = `ALTER TABLE ${table.name} ADD COLUMN ${newColumn.name} ${newColumn.type}`;
+  if (newColumn.identity) alterSQL += ` IDENTITY(${newColumn.identity.seed || 1},${newColumn.identity.increment || 1})`;
+  if (!newColumn.nullable) alterSQL += ' NOT NULL';
+  const formatted = formatDefaultValueForSQL(newColumn.defaultValue);
+  if (formatted !== undefined) alterSQL += ` DEFAULT ${formatted}`;
         break;
       
       case 'DROP_COLUMN':
@@ -1260,6 +1305,10 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
       relationships: [...prev.relationships, newRelationship],
       updatedAt: new Date(),
     }));
+
+    // Notify collaborators and UI components that a relationship was added
+    try { emitSchemaChange('relationship_added', newRelationship); } catch (e) { /* best-effort */ }
+
 
     // Create foreign key constraint in SQL engine
     if (sqlEngine) {
@@ -1696,9 +1745,14 @@ function generateMySQLScript(tables: Table[], relationships: Relationship[], ind
   tables.forEach(table => {
     script += `CREATE TABLE \`${table.name}\` (\n`;
     const columnDefs = table.columns.map(col => {
-      let def = `  \`${col.name}\` ${col.type}`;
+      let colType = col.type.toUpperCase();
+      if (colType.startsWith('VARCHAR')) colType = colType.replace('VARCHAR', 'NVARCHAR');
+      if (colType === 'DATETIME') colType = 'DATETIME2';
+
+      let def = `  \`${col.name}\` ${colType}`;
       if (!col.nullable) def += ' NOT NULL';
-      if (col.defaultValue) def += ` DEFAULT '${col.defaultValue}'`;
+      const formattedDefault = formatDefaultValueForSQL(col.defaultValue);
+      if (formattedDefault !== undefined) def += ` DEFAULT ${formattedDefault}`;
       if (col.isPrimaryKey) def += ' PRIMARY KEY';
       if (col.isUnique) def += ' UNIQUE';
       return def;
@@ -1738,7 +1792,8 @@ function generateMySQLScript(tables: Table[], relationships: Relationship[], ind
     });
     
     if (sourceTable && targetTable && sourceColumn && targetColumn) {
-      script += `ALTER TABLE \`${sourceTable.name}\` ADD CONSTRAINT fk_${sourceTable.name}_${sourceColumn.name} FOREIGN KEY (\`${sourceColumn.name}\`) REFERENCES \`${targetTable.name}\`(\`${targetColumn.name}\`);\n`;
+      const fkName = `FK_${sourceTable.name}_${targetTable.name}_${sourceColumn.name}`;
+      script += `ALTER TABLE \`${sourceTable.name}\` ADD CONSTRAINT ${fkName} FOREIGN KEY (\`${sourceColumn.name}\`) REFERENCES \`${targetTable.name}\`(\`${targetColumn.name}\`) ON DELETE NO ACTION;\n`;
     } else {
       console.error('Failed to resolve relationship:', {
         sourceTable: sourceTable?.name || 'NOT FOUND',
@@ -1774,9 +1829,14 @@ function generatePostgreSQLScript(tables: Table[], relationships: Relationship[]
   tables.forEach(table => {
     script += `CREATE TABLE "${table.name}" (\n`;
     const columnDefs = table.columns.map(col => {
-      let def = `  "${col.name}" ${col.type}`;
+      let colType = col.type.toUpperCase();
+      if (colType.startsWith('VARCHAR')) colType = colType.replace('VARCHAR', 'NVARCHAR');
+      if (colType === 'DATETIME') colType = 'TIMESTAMP';
+
+      let def = `  "${col.name}" ${colType}`;
       if (!col.nullable) def += ' NOT NULL';
-      if (col.defaultValue) def += ` DEFAULT '${col.defaultValue}'`;
+      const formattedDefault = formatDefaultValueForSQL(col.defaultValue);
+      if (formattedDefault !== undefined) def += ` DEFAULT ${formattedDefault}`;
       if (col.isPrimaryKey) def += ' PRIMARY KEY';
       if (col.isUnique) def += ' UNIQUE';
       return def;
@@ -1801,7 +1861,8 @@ function generatePostgreSQLScript(tables: Table[], relationships: Relationship[]
     });
     
     if (sourceTable && targetTable && sourceColumn && targetColumn) {
-      script += `ALTER TABLE "${sourceTable.name}" ADD CONSTRAINT fk_${sourceTable.name}_${sourceColumn.name} FOREIGN KEY ("${sourceColumn.name}") REFERENCES "${targetTable.name}"("${targetColumn.name}");\n`;
+      const fkName = `FK_${sourceTable.name}_${targetTable.name}_${sourceColumn.name}`;
+      script += `ALTER TABLE "${sourceTable.name}" ADD CONSTRAINT ${fkName} FOREIGN KEY ("${sourceColumn.name}") REFERENCES "${targetTable.name}"("${targetColumn.name}") ON DELETE NO ACTION;\n`;
     } else {
       console.error('Failed to resolve PostgreSQL relationship:', {
         sourceTable: sourceTable?.name || 'NOT FOUND',
@@ -1818,14 +1879,20 @@ function generatePostgreSQLScript(tables: Table[], relationships: Relationship[]
 }
 
 function generateSQLServerScript(tables: Table[], relationships: Relationship[], _indexes: Index[], _constraints: Constraint[], _users: User[], _permissions: Permission[]): string {
-  let script = '-- SQL Server Database Schema\n-- Generated by Database Creator\n\n';
+  const dbName = `EXPORTED_DB_${new Date().toISOString().slice(0,10).replace(/-/g,'')}_${new Date().toTimeString().slice(0,8).replace(/:/g,'')}`;
+  let script = `CREATE DATABASE [${dbName}];\nGO\nUSE [${dbName}];\nGO\n\n-- SQL Server Database Schema\n-- Generated by Database Creator\n\n`;
   
   tables.forEach(table => {
     script += `CREATE TABLE [${table.name}] (\n`;
     const columnDefs = table.columns.map(col => {
-      let def = `  [${col.name}] ${col.type}`;
+      let colType = col.type.toUpperCase();
+      if (colType.startsWith('VARCHAR')) colType = colType.replace('VARCHAR', 'NVARCHAR');
+      if (colType === 'DATETIME') colType = 'DATETIME2';
+
+      let def = `  [${col.name}] ${colType}`;
       if (!col.nullable) def += ' NOT NULL';
-      if (col.defaultValue) def += ` DEFAULT '${col.defaultValue}'`;
+      const formattedDefault = formatDefaultValueForSQL(col.defaultValue);
+      if (formattedDefault !== undefined) def += ` DEFAULT ${formattedDefault}`;
       if (col.isPrimaryKey) def += ' PRIMARY KEY';
       if (col.isUnique) def += ' UNIQUE';
       return def;
@@ -1842,7 +1909,8 @@ function generateSQLServerScript(tables: Table[], relationships: Relationship[],
     const targetColumn = targetTable?.columns.find(c => c.id === rel.targetColumnId);
     
     if (sourceTable && targetTable && sourceColumn && targetColumn) {
-      script += `ALTER TABLE [${sourceTable.name}] ADD CONSTRAINT fk_${sourceTable.name}_${sourceColumn.name} FOREIGN KEY ([${sourceColumn.name}]) REFERENCES [${targetTable.name}]([${targetColumn.name}]);\n`;
+      const fkName = `FK_${sourceTable.name}_${targetTable.name}_${sourceColumn.name}`;
+      script += `ALTER TABLE [${sourceTable.name}] ADD CONSTRAINT ${fkName} FOREIGN KEY ([${sourceColumn.name}]) REFERENCES [${targetTable.name}]([${targetColumn.name}]) ON DELETE NO ACTION;\n`;
     }
   });
   
