@@ -985,9 +985,14 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
   }, [currentSchema.isShared, syncWorkspaceWithMongoDB]);
 
   const addTable = useCallback((table: Omit<Table, 'id' | 'rowCount' | 'data'>) => {
+    // Respect an id if the caller provided one (some callers generate ids
+    // ahead of time and expect them to be preserved so relationships
+    // referencing those ids will line up). Fall back to a new uuid if
+    // none was provided.
+    const providedId = (table as any).id as string | undefined;
     const newTable: Table = {
       ...table,
-      id: uuidv4(),
+      id: providedId || uuidv4(),
       rowCount: 0,
       data: [],
     };
