@@ -153,6 +153,14 @@ const SmartExportManager: React.FC = () => {
         content = formatSQLOutput(content);
       }
 
+      // If includeData is requested, append INSERT statements for each table
+      if (options.includeData && selectedFormat !== 'json' && selectedFormat !== 'mongodb') {
+        const inserts = generateDataInserts(selectedFormat);
+        if (inserts) {
+          content += '\n\n-- Data inserts\n' + inserts;
+        }
+      }
+
       // Generate smart filename based on project name
       const projectName = currentSchema.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
       const timestamp = new Date().toISOString().slice(0, 10);
@@ -290,6 +298,44 @@ const SmartExportManager: React.FC = () => {
       .replace(/;/g, ';\n')
       .replace(/\n\s*\n/g, '\n\n')
       .trim();
+  };
+
+  const escapeSQLValue = (val: any): string => {
+    if (val === null || val === undefined) return 'NULL';
+    if (typeof val === 'number') return String(val);
+    if (typeof val === 'boolean') return val ? '1' : '0';
+    // Dates -> quote
+    if (val instanceof Date) return `'${val.toISOString()}'`;
+    // Strings: escape single quotes
+    const s = String(val).replace(/'/g, "''");
+    return `'${s}'`;
+  };
+
+  const generateDataInserts = (format: string): string => {
+    let out = '';
+    currentSchema.tables.forEach(table => {
+      if (!table.data || table.data.length === 0) return;
+      const cols = table.columns.map(c => c.name);
+      table.data.forEach(row => {
+        const values = cols.map(cn => {
+          const v = row[cn];
+          return escapeSQLValue(v);
+        }).join(', ');
+
+        if (format === 'mysql') {
+          out += `INSERT INTO \`${table.name}\` (${cols.map(c => `\`${c}\``).join(', ')}) VALUES (${values});\n`;
+        } else if (format === 'postgresql') {
+          out += `INSERT INTO "${table.name}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${values});\n`;
+        } else if (format === 'sqlserver') {
+          out += `INSERT INTO [${table.name}] (${cols.map(c => `[${c}]`).join(', ')}) VALUES (${values});\n`;
+        } else {
+          out += `INSERT INTO ${table.name} (${cols.join(',')}) VALUES (${values});\n`;
+        }
+      });
+      out += '\n';
+    });
+
+    return out;
   };
 
   const sqlTypeToTypeScript = (sqlType: string): string => {
