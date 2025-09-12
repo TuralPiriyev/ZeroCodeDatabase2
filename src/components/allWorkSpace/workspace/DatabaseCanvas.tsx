@@ -117,7 +117,11 @@ const DatabaseCanvasInner: React.FC<DatabaseCanvasProps> = ({
         labelStyle: { fontSize: 12, fontWeight: 600 },
       };
     });
-    setEdges(newEdges);
+    // Ensure nodes state is updated first (sometimes table creation and
+    // relationship creation happen in the same tick). Schedule edge update
+    // on next microtask to ensure ReactFlow has mounted/updated nodes and
+    // the handles are available so edges render correctly.
+    Promise.resolve().then(() => setEdges(newEdges));
   }, [currentSchema.relationships, currentSchema.tables, setEdges]);
 
   // Monitor zoom changes

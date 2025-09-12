@@ -1270,16 +1270,21 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     const sourceColumn = sourceTable?.columns.find(c => c.id === relationship.sourceColumnId);
     const targetColumn = targetTable?.columns.find(c => c.id === relationship.targetColumnId);
     
-    // Check if relationship is valid
+    // If some referenced table/column isn't present yet, don't abort: log a warning
+    // and still add the relationship to the schema. This covers the case where
+    // a table + its foreign keys are created in the same action — the table
+    // may not be visible in `currentSchema` yet due to state batching, so
+    // adding the relationship now and reconciling later allows the canvas
+    // to pick up the edge once both table and relationship exist.
     if (!sourceTable || !targetTable || !sourceColumn || !targetColumn) {
-      console.error('Invalid relationship: Missing table or column', {
+      console.warn('Relationship references missing table or column; adding relationship and will reconcile when table/column exists', {
         sourceTable: sourceTable?.name,
         targetTable: targetTable?.name,
         sourceColumn: sourceColumn?.name,
         targetColumn: targetColumn?.name,
         relationship
       });
-      return;
+      // proceed — do not return
     }
     
     // Check if relationship already exists
@@ -1310,16 +1315,23 @@ export const DatabaseProvider: React.FC<DatabaseProviderProps> = ({ children }) 
     try { emitSchemaChange('relationship_added', newRelationship); } catch (e) { /* best-effort */ }
 
 
-    // Create foreign key constraint in SQL engine
+    // Create foreign key constraint in SQL engine, but only if the referenced
+    // tables/columns are present. If they are not (eg. relationship created
+    // before the table is committed to state), skip SQL execution — the
+    // constraint can be created later when the table exists (or it's a
+    // non-persistent preview in sql.js mode).
     if (sqlEngine) {
       try {
-        // Create the foreign key constraint
-        const fkSQL = `ALTER TABLE ${sourceTable.name} ADD CONSTRAINT fk_${sourceTable.name}_${sourceColumn.name} FOREIGN KEY (${sourceColumn.name}) REFERENCES ${targetTable.name}(${targetColumn.name})`;
-        if ((sqlJsModeRef as any).current) {
-          console.log('Skipping FK SQL execution in sql.js mode for new relationship:', fkSQL);
+        if (sourceTable && targetTable && sourceColumn && targetColumn) {
+          const fkSQL = `ALTER TABLE ${sourceTable.name} ADD CONSTRAINT fk_${sourceTable.name}_${sourceColumn.name} FOREIGN KEY (${sourceColumn.name}) REFERENCES ${targetTable.name}(${targetColumn.name})`;
+          if ((sqlJsModeRef as any).current) {
+            console.log('Skipping FK SQL execution in sql.js mode for new relationship:', fkSQL);
+          } else {
+            sqlEngine.run(fkSQL);
+            console.log('Created foreign key constraint:', fkSQL);
+          }
         } else {
-          sqlEngine.run(fkSQL);
-          console.log('Created foreign key constraint:', fkSQL);
+          console.log('Deferred FK creation in SQL engine because referenced table/column is not yet available');
         }
       } catch (error) {
         console.error('Failed to create foreign key constraint in SQL engine:', error);
