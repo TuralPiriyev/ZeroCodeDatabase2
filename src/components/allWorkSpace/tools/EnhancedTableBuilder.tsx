@@ -431,10 +431,26 @@ const EnhancedTableBuilder: React.FC = () => {
                     <span className="text-gray-700 dark:text-gray-300">Primary Key</span>
                   </label>
 
-                  {/* Identity controls appear when Primary Key is selected */}
-                  {column.isPrimaryKey && (
+                  {/* Identity checkbox and controls */}
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={Boolean((column as any).identity)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          updateColumn(index, { identity: { seed: 1, increment: 1 } as any });
+                        } else {
+                          updateColumn(index, { identity: undefined as any });
+                        }
+                      }}
+                      className="rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                    />
+                    <span className="text-gray-700 dark:text-gray-300">Identity</span>
+                  </label>
+
+                  {(column as any).identity && (
                     <div className="flex items-center gap-2">
-                      <label className="text-sm text-gray-700 dark:text-gray-300">Identity</label>
+                      <label className="text-sm text-gray-700 dark:text-gray-300">Seed</label>
                       <input
                         type="number"
                         min={1}
@@ -442,7 +458,7 @@ const EnhancedTableBuilder: React.FC = () => {
                         onChange={(e) => updateColumn(index, { identity: { ...(column as any).identity, seed: Number(e.target.value) } })}
                         className="w-20 px-2 py-1 border rounded text-sm"
                       />
-                      <span className="text-sm">,</span>
+                      <label className="text-sm text-gray-700 dark:text-gray-300">Increment</label>
                       <input
                         type="number"
                         min={1}
