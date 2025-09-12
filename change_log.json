@@ -1,0 +1,40 @@
+{
+  "generated_at": "2025-09-12T00:00:00Z",
+  "issues": [
+    {
+      "type": "missing_database_header",
+      "severity": "info",
+      "description": "Export did not include CREATE DATABASE/USE header. Header added.",
+      "before": "-- no database header",
+      "after": "CREATE DATABASE [EXPORTED_DB_YYYYMMDD_HHMMSS]; USE [EXPORTED_DB_YYYYMMDD_HHMMSS];"
+    },
+    {
+      "type": "primary_key_identity_missing",
+      "severity": "high",
+      "description": "INT PRIMARY KEY columns without IDENTITY were made IDENTITY(1,1).",
+      "before": "id INT PRIMARY KEY",
+      "after": "id INT PRIMARY KEY IDENTITY(1,1)"
+    },
+    {
+      "type": "varchar_unicode",
+      "severity": "medium",
+      "description": "All VARCHAR types converted to NVARCHAR for Unicode support.",
+      "before": "VARCHAR(100)",
+      "after": "NVARCHAR(100)"
+    },
+    {
+      "type": "datetime_precision",
+      "severity": "low",
+      "description": "DATETIME converted to DATETIME2; default functions unquoted.",
+      "before": "created_at DATETIME DEFAULT 'GETDATE()'",
+      "after": "created_at DATETIME2 DEFAULT GETDATE()"
+    },
+    {
+      "type": "fk_direction",
+      "severity": "high",
+      "description": "Foreign keys normalized to child -> parent and renamed with convention FK_<Child>_<Parent>_<Col>",
+      "before": "ALTER TABLE Categories ADD FOREIGN KEY (CategoryId) REFERENCES Products(ProductId)",
+      "after": "ALTER TABLE Products ADD CONSTRAINT FK_Products_Categories_CategoryId FOREIGN KEY (CategoryId) REFERENCES dbo.Categories(CategoryId)"
+    }
+  ]
+}
