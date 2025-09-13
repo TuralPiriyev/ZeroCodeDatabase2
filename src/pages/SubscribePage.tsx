@@ -194,11 +194,23 @@ const SubscribePage: React.FC = () => {
               style={{ layout: 'vertical', shape: 'pill', label: 'subscribe' }}
               createSubscription={async (_data: any, actions: any) => {
                 try {
-                  const sub = await actions.subscription.create({ plan_id: planId });
+                  // Explicitly tell PayPal we do NOT require shipping information here.
+                  // This avoids address/phone validation UI in the PayPal popup for subscriptions
+                  // when your product does not require shipping.
+                  const sub = await actions.subscription.create({
+                    plan_id: planId,
+                    application_context: {
+                      shipping_preference: 'NO_SHIPPING'
+                    }
+                  });
                   console.log('createSubscription result', sub);
                   return sub;
-                } catch (err) {
+                } catch (err: any) {
+                  // Improve logging to capture PayPal error payloads (details/message)
                   console.error('createSubscription error', err);
+                  if (err && (err.details || err.message)) {
+                    console.error('PayPal error details:', err.details || err.message);
+                  }
                   // Surface user-facing error
                   alert('Unable to start subscription. See console for details.');
                   throw err;
@@ -238,7 +250,11 @@ const SubscribePage: React.FC = () => {
                 alert('Payment canceled.');
               }}
               onError={(err: any) => {
+                // Log full error shape so you can inspect `err.details` returned by PayPal
                 console.error('PayPal Buttons error', err);
+                if (err && (err.details || err.message)) {
+                  console.error('PayPal onError details:', err.details || err.message);
+                }
                 alert('Payment failed or an error occurred. See console for details.');
               }}
             />
