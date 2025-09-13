@@ -8,7 +8,8 @@ interface PlanCardProps {
   features: string[];
   highlighted?: boolean;
   ctaText?: string;
-  onSelect?: () => void;
+  // onSelect event-ə keçə bilsin deyə tipi dəyişdirildi
+  onSelect?: (e?: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
 const PlanCard = ({
@@ -20,6 +21,16 @@ const PlanCard = ({
   ctaText = 'Choose Plan',
   onSelect,
 }: PlanCardProps) => {
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // form içində və ya link içində olsa belə default davranışı dayandırır
+    e.preventDefault();
+    try {
+      if (onSelect) onSelect(e);
+    } catch (err) {
+      console.error('PlanCard onSelect error', err);
+    }
+  };
+
   return (
     <div
       className={`rounded-3xl overflow-hidden transition-all duration-300 ${
@@ -73,7 +84,8 @@ const PlanCard = ({
           ))}
         </div>
         <button
-         onClick={onSelect}
+          type="button"           /* <--- burada vacib dəyişiklik */
+          onClick={handleClick}
           className={`w-full py-3 rounded-full font-medium transition-colors ${
             highlighted
               ? 'bg-white text-[#007ACC] hover:bg-gray-100'

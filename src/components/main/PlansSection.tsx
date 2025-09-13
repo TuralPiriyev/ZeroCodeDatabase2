@@ -1,4 +1,3 @@
-// src/components/main/PlansSection.tsx
 import React from 'react';
 import PlanCard from './PlanCard';
 import { useNavigate } from 'react-router-dom';
@@ -18,8 +17,7 @@ const PlansSection: React.FC = () => {
         'Single user',
       ],
       highlighted: false,
-      // Free üçün heç bir link, onSelect boş
-      onSelect: () => { /* istəyə bağlı: modal aç */ },
+      onSelect: () => { navigate('/subscribe?plan=free'); },
       ctaText: 'Choose Free',
     },
     {
@@ -35,10 +33,11 @@ const PlansSection: React.FC = () => {
         'API generation',
       ],
       highlighted: true,
-     onSelect: () => {
-  console.log('Pro clicked — redirecting to subscribe page');
-  window.location.href = '/subscribe?plan=pro';
-},
+      // SPA yönləndirmə - səhifə reload etmədən keçid edir
+      onSelect: () => {
+        console.log('Pro clicked — redirecting to subscribe page');
+        navigate('/subscribe?plan=pro');
+      },
       ctaText: 'Buy Pro',
     },
     {
@@ -55,8 +54,8 @@ const PlansSection: React.FC = () => {
         'Database backups',
       ],
       highlighted: false,
-      // Team (ultimate) üçün PayPal link
-    onSelect: () => { navigate('/subscribe?plan=ultimate'); },
+      // əgər hosted PayPal link istifadə etmək istəyirsənsə: window.open(url, '_blank')
+      onSelect: () => { navigate('/subscribe?plan=ultimate'); },
       ctaText: 'Buy Team',
     },
   ];
