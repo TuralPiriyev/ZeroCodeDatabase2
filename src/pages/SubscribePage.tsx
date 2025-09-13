@@ -7,76 +7,161 @@ function useQuery() {
   return new URLSearchParams(useLocation().search);
 }
 
+/**
+ * Utility: resolve env value from multiple candidate keys (checks process.env.* and import.meta.env)
+ */
+function resolveEnv(...keys: string[]) {
+  // check process.env variants first
+  for (const k of keys) {
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env && typeof (process.env as any)[k] !== 'undefined' && (process.env as any)[k] !== '') {
+      return { key: k, value: (process.env as any)[k] };
+    }
+  }
+
+  // then import.meta.env (Vite)
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      // @ts-ignore
+      const meta = import.meta.env;
+      for (const k of keys) {
+        // Vite commonly uses VITE_ prefix, so keys should be provided accordingly
+        if (typeof (meta as any)[k] !== 'undefined' && (meta as any)[k] !== '') {
+          return { key: `import.meta.env.${k}`, value: (meta as any)[k] };
+        }
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return { key: undefined, value: undefined };
+}
+
 const SubscribePage: React.FC = () => {
   const query = useQuery();
   const navigate = useNavigate();
-  const plan = query.get('plan') || 'pro';
+  const plan = (query.get('plan') || 'pro').toLowerCase();
 
-  // Try multiple env var prefixes so this works in various build setups
-  const planId = plan === 'ultimate'
-    ? (process.env.REACT_APP_PAYPAL_PLAN_ULTIMATE_ID
-        || process.env.PAYPAL_PLAN_ULTIMATE_ID
-        || (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_PAYPAL_PLAN_ULTIMATE_ID : undefined))
-    : (process.env.REACT_APP_PAYPAL_PLAN_PRO_ID
-        || process.env.PAYPAL_PRO_PLAN_ID
-        || (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_PAYPAL_PLAN_PRO_ID : undefined));
+  // Candidate env names for plan IDs and client id (cover common naming mistakes)
+  // For PRO plan we try these (order matters): REACT_APP_PAYPAL_PLAN_PRO_ID, REACT_APP_PAYPAL_PRO_PLAN_ID, PAYPAL_PRO_PLAN_ID, PAYPAL_PLAN_PRO_ID, VITE equivalents
+  const planProCandidates = [
+    'REACT_APP_PAYPAL_PLAN_PRO_ID',
+    'REACT_APP_PAYPAL_PRO_PLAN_ID',
+    'REACT_APP_PAYPAL_PROPLAN_ID',
+    'REACT_APP_PAYPAL_PRO_PLANID',
+    'PAYPAL_PRO_PLAN_ID',
+    'PAYPAL_PLAN_PRO_ID',
+    'PAYPAL_PROPLAN_ID',
+    'VITE_PAYPAL_PLAN_PRO_ID',
+    'VITE_PAYPAL_PRO_PLAN_ID'
+  ];
 
-  const clientId = process.env.REACT_APP_PAYPAL_CLIENT_ID
-    || process.env.PAYPAL_CLIENT_ID
-    || (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_PAYPAL_CLIENT_ID : undefined);
+  const planUltimateCandidates = [
+    'REACT_APP_PAYPAL_PLAN_ULTIMATE_ID',
+    'REACT_APP_PAYPAL_ULTIMATE_PLAN_ID',
+    'PAYPAL_ULTIMATE_PLAN_ID',
+    'PAYPAL_PLAN_ULTIMATE_ID',
+    'VITE_PAYPAL_PLAN_ULTIMATE_ID',
+    'VITE_PAYPAL_ULTIMATE_PLAN_ID'
+  ];
 
-  // Log important runtime values to help debug env / build issues
+  const clientCandidates = [
+    'REACT_APP_PAYPAL_CLIENT_ID',
+    'REACT_APP_PAYPAL_PUBLIC_CLIENT_ID',
+    'PAYPAL_CLIENT_ID',
+    'VITE_PAYPAL_CLIENT_ID'
+  ];
+
+  // Resolve candidates
+  const resolvedPro = resolveEnv(...planProCandidates);
+  const resolvedUltimate = resolveEnv(...planUltimateCandidates);
+  const resolvedClient = resolveEnv(...clientCandidates);
+
+  // pick planId based on `plan`
+  const planId = plan === 'ultimate' ? resolvedUltimate.value : resolvedPro.value;
+  const planKeyUsed = plan === 'ultimate' ? resolvedUltimate.key : resolvedPro.key;
+  const clientId = resolvedClient.value;
+  const clientKeyUsed = resolvedClient.key;
+
+  // debug logging to help you see EXACTLY which env key (if any) was found
   useEffect(() => {
+    console.log('=== SubscribePage env debug ===');
+    console.log('Requested plan (from query):', plan);
+    console.log('Resolved PRO plan candidates order:', planProCandidates);
+    console.log('Resolved ULTIMATE plan candidates order:', planUltimateCandidates);
+    console.log('Resolved CLIENT candidates order:', clientCandidates);
+
+    console.log('Resolved values:');
+    console.log('  PRO plan -> key:', resolvedPro.key, ' value:', resolvedPro.value);
+    console.log('  ULTIMATE plan -> key:', resolvedUltimate.key, ' value:', resolvedUltimate.value);
+    console.log('  CLIENT ID -> key:', resolvedClient.key, ' value:', resolvedClient.value);
+
+    // Also print raw common process.env names you may have in your .env for quick cross-check
+    console.log('Raw quick-check of likely keys (process.env):');
     try {
-      console.log('SubscribePage runtime debug:');
-      console.log('  plan (from query) =', plan);
-      console.log('  resolved planId =', planId);
-      console.log('  resolved clientId =', clientId);
-      // also print alternative env vars if present (helps detect naming mistakes)
+      // @ts-ignore
+      console.log('  process.env.REACT_APP_PAYPAL_CLIENT_ID =', process.env.REACT_APP_PAYPAL_CLIENT_ID);
+      // @ts-ignore
+      console.log('  process.env.REACT_APP_PAYPAL_PLAN_PRO_ID =', process.env.REACT_APP_PAYPAL_PLAN_PRO_ID);
+      // @ts-ignore
+      console.log('  process.env.REACT_APP_PAYPAL_PRO_PLAN_ID =', process.env.REACT_APP_PAYPAL_PRO_PLAN_ID);
+      // @ts-ignore
+      console.log('  process.env.PAYPAL_PRO_PLAN_ID =', process.env.PAYPAL_PRO_PLAN_ID);
+      // @ts-ignore
+      console.log('  process.env.PAYPAL_PLAN_PRO_ID =', process.env.PAYPAL_PLAN_PRO_ID);
+      // @ts-ignore
+      console.log('  process.env.PAYPAL_CLIENT_ID =', process.env.PAYPAL_CLIENT_ID);
+      // import.meta.env sample
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const meta: any = (typeof import.meta !== 'undefined' ? import.meta.env : undefined);
-        console.log('  process.env.REACT_APP_PAYPAL_PLAN_PRO_ID =', process.env.REACT_APP_PAYPAL_PLAN_PRO_ID);
-        console.log('  process.env.REACT_APP_PAYPAL_PLAN_ULTIMATE_ID =', process.env.REACT_APP_PAYPAL_PLAN_ULTIMATE_ID);
-        console.log('  process.env.REACT_APP_PAYPAL_CLIENT_ID =', process.env.REACT_APP_PAYPAL_CLIENT_ID);
-        console.log('  process.env.PAYPAL_PLAN_PRO_ID =', process.env.PAYPAL_PLAN_PRO_ID);
-        console.log('  process.env.PAYPAL_PLAN_ULTIMATE_ID =', process.env.PAYPAL_PLAN_ULTIMATE_ID);
-        console.log('  process.env.PAYPAL_CLIENT_ID =', process.env.PAYPAL_CLIENT_ID);
-        console.log('  import.meta.env (sample) =', meta ? {
-          VITE_PAYPAL_PLAN_PRO_ID: meta.VITE_PAYPAL_PLAN_PRO_ID,
-          VITE_PAYPAL_PLAN_ULTIMATE_ID: meta.VITE_PAYPAL_PLAN_ULTIMATE_ID,
-          VITE_PAYPAL_CLIENT_ID: meta.VITE_PAYPAL_CLIENT_ID
-        } : 'no import.meta.env');
-      } catch (innerErr) {
-        console.warn('Error logging additional env info', innerErr);
+        // @ts-ignore
+        let m: any = undefined;
+        // Only assign if import.meta.env exists
+        if (typeof import.meta !== 'undefined' && typeof import.meta.env !== 'undefined') {
+          // @ts-ignore
+          m = import.meta.env;
+        }
+        if (m) {
+          // @ts-ignore
+          console.log('  import.meta.env.VITE_PAYPAL_CLIENT_ID =', m.VITE_PAYPAL_CLIENT_ID);
+          // @ts-ignore
+          console.log('  import.meta.env.VITE_PAYPAL_PLAN_PRO_ID =', m.VITE_PAYPAL_PLAN_PRO_ID);
+        } else {
+          console.log('  import.meta.env not available in this build.');
+        }
+      } catch (e) {
+        console.log('  import.meta.env access error', e);
       }
-    } catch (err) {
-      console.warn('SubscribePage debug logging failed', err);
+    } catch (e) {
+      // ignore
     }
-  }, [plan, planId, clientId]);
+    console.log('=== end debug ===');
+  }, [plan, resolvedPro.key, resolvedUltimate.key, resolvedClient.key]);
 
   const initialOptions = useMemo(() => ({
-    "client-id": clientId || '',
+    'client-id': clientId || '',
     vault: true,
     intent: 'subscription'
   }), [clientId]);
 
-  // If planId missing, show user-friendly message but keep debug logs available in console
+  // If planId missing, show user-friendly message and keep logs for debugging
   if (!planId) {
     return (
       <div className="p-8">
         <h2 className="text-xl font-semibold mb-2">Plan not found</h2>
-        <p className="text-gray-600">Unable to resolve plan configuration. Check console for debug info or contact support.</p>
+        <p className="text-gray-600">Unable to resolve plan configuration. Please check your .env keys (console has debug info).</p>
+        <pre className="mt-4 text-sm text-gray-700">Searched keys for this plan: {(plan === 'ultimate' ? planUltimateCandidates : planProCandidates).join(', ')}</pre>
       </div>
     );
   }
 
-  // If clientId missing, show a clear message (SDK will fail without client-id)
+  // If clientId missing, show message
   if (!clientId) {
     return (
       <div className="p-8">
         <h2 className="text-xl font-semibold mb-2">Payments temporarily unavailable</h2>
-        <p className="text-gray-600">PayPal client ID not configured. Check console for debug info or contact support.</p>
+        <p className="text-gray-600">PayPal client ID not configured. Check console for which env key is expected.</p>
       </div>
     );
   }
@@ -89,9 +174,7 @@ const SubscribePage: React.FC = () => {
         <div id={`paypal-button-${plan}`}>
           <PayPalButtons
             style={{ layout: 'vertical', shape: 'pill', label: 'subscribe' }}
-            createSubscription={(_data: any, actions: any) => {
-              return actions.subscription.create({ plan_id: planId });
-            }}
+            createSubscription={(_data: any, actions: any) => actions.subscription.create({ plan_id: planId })}
             onApprove={async (data: any) => {
               try {
                 const resp = await fetch('/api/paypal/confirm-subscription', {
