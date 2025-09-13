@@ -4,31 +4,39 @@ import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 function useQuery() {
-  return new URLSearchParams(useLocation().search);
+  const loc = useLocation();
+  return new URLSearchParams(loc.search);
 }
 
 /**
- * Utility: resolve env value from multiple candidate keys (checks process.env.* and import.meta.env)
+ * Resolve environment-like values at browser runtime.
+ * Prefers `import.meta.env` (Vite) then `window.__APP_ENV__` (optional runtime-injected config).
  */
 function resolveEnv(...keys: string[]) {
-  // check process.env variants first
-  for (const k of keys) {
-    // @ts-ignore
-    if (typeof process !== 'undefined' && process.env && typeof (process.env as any)[k] !== 'undefined' && (process.env as any)[k] !== '') {
-      return { key: k, value: (process.env as any)[k] };
-    }
-  }
-
-  // then import.meta.env (Vite)
+  // Try import.meta.env (Vite)
   try {
     // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env) {
-      // @ts-ignore
-      const meta = import.meta.env;
+    const meta: any = import.meta;
+    if (meta && meta.env) {
       for (const k of keys) {
-        // Vite commonly uses VITE_ prefix, so keys should be provided accordingly
-        if (typeof (meta as any)[k] !== 'undefined' && (meta as any)[k] !== '') {
-          return { key: `import.meta.env.${k}`, value: (meta as any)[k] };
+        if (typeof meta[k] !== 'undefined' && meta[k] !== '') {
+          return { key: `import.meta.env.${k}`, value: meta[k] };
+        }
+      }
+    }
+  } catch (e) {
+    // ignore - import.meta may not be available in some environments
+  }
+
+  // Fallback: runtime-injected global config
+  try {
+    // @ts-ignore
+    if (typeof window !== 'undefined' && (window as any).__APP_ENV__) {
+      // @ts-ignore
+      const cfg = (window as any).__APP_ENV__;
+      for (const k of keys) {
+        if (typeof cfg[k] !== 'undefined' && cfg[k] !== '') {
+          return { key: `window.__APP_ENV__.${k}`, value: cfg[k] };
         }
       }
     }
@@ -81,9 +89,8 @@ const SubscribePage: React.FC = () => {
 
   // pick planId based on `plan`
   const planId = plan === 'ultimate' ? resolvedUltimate.value : resolvedPro.value;
-  const planKeyUsed = plan === 'ultimate' ? resolvedUltimate.key : resolvedPro.key;
   const clientId = resolvedClient.value;
-  const clientKeyUsed = resolvedClient.key;
+  
 
   // debug logging to help you see EXACTLY which env key (if any) was found
   useEffect(() => {
@@ -101,18 +108,28 @@ const SubscribePage: React.FC = () => {
     // Also print raw common process.env names you may have in your .env for quick cross-check
     console.log('Raw quick-check of likely keys (process.env):');
     try {
-      // @ts-ignore
-      console.log('  process.env.REACT_APP_PAYPAL_CLIENT_ID =', process.env.REACT_APP_PAYPAL_CLIENT_ID);
-      // @ts-ignore
-      console.log('  process.env.REACT_APP_PAYPAL_PLAN_PRO_ID =', process.env.REACT_APP_PAYPAL_PLAN_PRO_ID);
-      // @ts-ignore
-      console.log('  process.env.REACT_APP_PAYPAL_PRO_PLAN_ID =', process.env.REACT_APP_PAYPAL_PRO_PLAN_ID);
-      // @ts-ignore
-      console.log('  process.env.PAYPAL_PRO_PLAN_ID =', process.env.PAYPAL_PRO_PLAN_ID);
-      // @ts-ignore
-      console.log('  process.env.PAYPAL_PLAN_PRO_ID =', process.env.PAYPAL_PLAN_PRO_ID);
-      // @ts-ignore
-      console.log('  process.env.PAYPAL_CLIENT_ID =', process.env.PAYPAL_CLIENT_ID);
+      // Try to print any detected runtime config sources
+      try {
+        // @ts-ignore
+        const meta: any = import.meta;
+        if (meta && meta.env) {
+          // @ts-ignore
+          console.log('  import.meta.env.VITE_PAYPAL_CLIENT_ID =', meta.VITE_PAYPAL_CLIENT_ID);
+        }
+      } catch (e) {
+        // ignore
+      }
+      try {
+        // @ts-ignore
+        if (typeof window !== 'undefined' && (window as any).__APP_ENV__) {
+          // @ts-ignore
+          const cfg = (window as any).__APP_ENV__;
+          console.log('  window.__APP_ENV__.PAYPAL_CLIENT_ID =', cfg.PAYPAL_CLIENT_ID);
+          console.log('  window.__APP_ENV__.VITE_PAYPAL_CLIENT_ID =', cfg.VITE_PAYPAL_CLIENT_ID);
+        }
+      } catch (e) {
+        // ignore
+      }
       // import.meta.env sample
       try {
         // @ts-ignore
@@ -140,7 +157,7 @@ const SubscribePage: React.FC = () => {
   }, [plan, resolvedPro.key, resolvedUltimate.key, resolvedClient.key]);
 
   const initialOptions = useMemo(() => ({
-    'client-id': clientId || '',
+    'client-id': clientId || undefined,
     vault: true,
     intent: 'subscription'
   }), [clientId]);
@@ -169,40 +186,44 @@ const SubscribePage: React.FC = () => {
   return (
     <div className="container mx-auto p-8">
       <h2 className="text-2xl font-bold mb-4">Subscribe to {plan === 'ultimate' ? 'Ultimate' : 'Pro'}</h2>
-
-      <PayPalScriptProvider options={initialOptions}>
-        <div id={`paypal-button-${plan}`}>
-          <PayPalButtons
-            style={{ layout: 'vertical', shape: 'pill', label: 'subscribe' }}
-            createSubscription={(_data: any, actions: any) => actions.subscription.create({ plan_id: planId })}
-            onApprove={async (data: any) => {
-              try {
-                const resp = await fetch('/api/paypal/confirm-subscription', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  credentials: 'include',
-                  body: JSON.stringify({ subscriptionID: data.subscriptionID })
-                });
-                const json = await resp.json();
-                if (resp.ok && json.success) {
-                  alert('Subscription active! Expires: ' + (json.nextBillingTime || json.expiresAt || 'unknown'));
-                  navigate('/account');
-                } else {
-                  console.error('confirm failed', json);
-                  alert('Subscription confirmation failed. Contact support.');
+      {clientId ? (
+        // Only render the PayPal SDK when we have a client id to avoid loading the SDK with an empty id
+        <PayPalScriptProvider options={initialOptions}>
+          <div id={`paypal-button-${plan}`}>
+            <PayPalButtons
+              style={{ layout: 'vertical', shape: 'pill', label: 'subscribe' }}
+              createSubscription={(_data: any, actions: any) => actions.subscription.create({ plan_id: planId })}
+              onApprove={async (data: any) => {
+                try {
+                  const resp = await fetch('/api/paypal/confirm-subscription', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ subscriptionID: data.subscriptionID })
+                  });
+                  const json = await resp.json();
+                  if (resp.ok && json.success) {
+                    alert('Subscription active! Expires: ' + (json.nextBillingTime || json.expiresAt || 'unknown'));
+                    navigate('/account');
+                  } else {
+                    console.error('confirm failed', json);
+                    alert('Subscription confirmation failed. Contact support.');
+                  }
+                } catch (err: any) {
+                  console.error('confirm error', err);
+                  alert('Error confirming subscription.');
                 }
-              } catch (err: any) {
-                console.error('confirm error', err);
-                alert('Error confirming subscription.');
-              }
-            }}
-            onError={(err: any) => {
-              console.error('PayPal Buttons error', err);
-              alert('Payment failed or canceled.');
-            }}
-          />
-        </div>
-      </PayPalScriptProvider>
+              }}
+              onError={(err: any) => {
+                console.error('PayPal Buttons error', err);
+                alert('Payment failed or canceled.');
+              }}
+            />
+          </div>
+        </PayPalScriptProvider>
+      ) : (
+        <div className="p-4 text-sm text-gray-600">PayPal client id not available; check your runtime configuration.</div>
+      )}
     </div>
   );
 };
