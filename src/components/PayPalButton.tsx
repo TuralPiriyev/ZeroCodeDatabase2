@@ -11,13 +11,23 @@ export const PayPalButton: React.FC<PayPalButtonProps> = ({ planId, onSuccess })
   return (
     <PayPalButtons
       style={{ layout: 'vertical', shape: 'pill', label: 'subscribe' }}
-      createSubscription={(_data: any, actions: any) => {
+      createSubscription={async (_data: any, actions: any) => {
         if (!planId) return Promise.reject('planId missing');
-        return actions.subscription.create({
-          'plan_id': planId
-        });
+        try {
+          // Do not request shipping/address from PayPal for subscription-only products
+          const sub = await actions.subscription.create({
+            plan_id: planId,
+            application_context: { shipping_preference: 'NO_SHIPPING' }
+          });
+          console.log('createSubscription result', sub);
+          return sub;
+        } catch (err: any) {
+          console.error('createSubscription error', err);
+          if (err && (err.details || err.message)) console.error('PayPal createSubscription details:', err.details || err.message);
+          throw err;
+        }
       }}
-      onApprove={async (data: any, actions: any) => {
+  onApprove={async (data: any) => {
         // data.subscriptionID is what PayPal returns
         try {
           const subscriptionID = data.subscriptionID;
@@ -41,6 +51,7 @@ export const PayPalButton: React.FC<PayPalButtonProps> = ({ planId, onSuccess })
       }}
       onError={(err: any) => {
         console.error('PayPal error', err);
+        if (err && (err.details || err.message)) console.error('PayPal onError details:', err.details || err.message);
       }}
       onCancel={() => {
         console.log('Payment cancelled');
