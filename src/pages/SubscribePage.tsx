@@ -158,10 +158,9 @@ const SubscribePage: React.FC = () => {
 
   const initialOptions = useMemo(() => ({
     'client-id': clientId || undefined,
-    // Temporarily set vault to false for debugging session-related errors.
-    // If this fixes the issue, consider using a server-driven vault flow or
-    // enabling vault only when you explicitly need to save payment methods.
-    vault: false,
+  // vault must be true for subscription flows in many PayPal setups.
+  // Keep vault enabled to ensure the SDK accepts intent=subscription.
+  vault: true,
     intent: 'subscription'
   }), [clientId]);
 
