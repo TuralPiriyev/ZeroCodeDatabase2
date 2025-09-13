@@ -14,7 +14,6 @@ const crypto = require('crypto');
 const axios = require('axios');
 const cron = require('node-cron');
 const cookieParser = require('cookie-parser');
-
 // Load environment variables
 dotenv.config();
 
@@ -27,6 +26,8 @@ const workspaceRoutes = require('./src/routes/workspaceRoutes.cjs');
 const schemaRoutes = require('./src/routes/schemaRoutes.cjs');
 const Invitation = require('./src/models/Invitation.cjs');
 const Member = require('./src/models/Member.cjs');
+const Subscription = require('./src/models/Subscription.cjs');
+
 // Yjs manager (production helper)
 const yjsManager = require('./server/yjsManager.cjs');
 
@@ -49,6 +50,12 @@ const HOST = process.env.HOST || '0.0.0.0';
 const MONGO_URL = process.env.MONGO_URL;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
 const SMTP_PORT = Number(process.env.SMTP_PORT);
+const PAYPAL_API_BASE = process.env.PAYPAL_API_BASE || 'https://api-m.sandbox.paypal.com';
+const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
+const PAYPAL_SECRET = process.env.PAYPAL_SECRET;
+const PAYPAL_PLAN_PRO_ID = process.env.PAYPAL_PLAN_PRO_ID;
+const PAYPAL_PLAN_ULTIMATE_ID = process.env.PAYPAL_PLAN_ULTIMATE_ID;
+const PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID;
 
 // Express setup
 const app = express();
@@ -368,6 +375,152 @@ app.get('/api/subscription/status', authenticate, async (req, res) => {
   } catch (err) {
     console.error('GET /api/subscription/status error:', err);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+app.post('/api/paypal/webhook', express.json({ type: 'application/json' }), async (req, res) => {
+  try {
+    const transmissionId = req.headers['paypal-transmission-id'];
+    const transmissionTime = req.headers['paypal-transmission-time'];
+    const certUrl = req.headers['paypal-cert-url'];
+    const authAlgo = req.headers['paypal-auth-algo'];
+    const transmissionSig = req.headers['paypal-transmission-sig'];
+    const webhookEvent = req.body;
+
+    if (!PAYPAL_WEBHOOK_ID) {
+      console.warn('PAYPAL_WEBHOOK_ID not set');
+      return res.status(500).send('Webhook not configured');
+    }
+
+    const accessToken = await getPayPalAccessToken();
+    const verifyRes = await axios.post(`${PAYPAL_API_BASE}/v1/notifications/verify-webhook-signature`, {
+      auth_algo: authAlgo,
+      cert_url: certUrl,
+      transmission_id: transmissionId,
+      transmission_sig: transmissionSig,
+      transmission_time: transmissionTime,
+      webhook_id: PAYPAL_WEBHOOK_ID,
+      webhook_event: webhookEvent
+    }, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
+    });
+
+    if (!verifyRes.data || verifyRes.data.verification_status !== 'SUCCESS') {
+      console.warn('Webhook verification failed', verifyRes.data);
+      return res.status(400).send('Invalid webhook signature');
+    }
+
+    const eventType = webhookEvent.event_type;
+    const resource = webhookEvent.resource || {};
+
+    console.log('PayPal webhook event:', eventType);
+
+    // Handle subscription lifecycle events
+    if (eventType.startsWith('BILLING.SUBSCRIPTION')) {
+      const subscriptionId = resource.id || resource.subscription_id;
+      const status = resource.status || resource.state;
+      const planId = resource.plan_id || (resource.plan && resource.plan.id);
+      const nextBillingTime = resource.billing_info && resource.billing_info.next_billing_time ? new Date(resource.billing_info.next_billing_time) : null;
+
+      // Update/Upsert Subscription doc
+      await Subscription.findOneAndUpdate(
+        { subscriptionId },
+        {
+          $set: {
+            subscriptionId,
+            planId,
+            status,
+            nextBillingTime,
+            raw: resource
+          }
+        },
+        { upsert: true }
+      );
+
+      // If subscription has mapping to user, update user status
+      const subDoc = await Subscription.findOne({ subscriptionId });
+      if (subDoc && subDoc.userId) {
+        const user = await User.findById(subDoc.userId);
+        if (user) {
+          if (String(status).toUpperCase() === 'ACTIVE') {
+            user.subscriptionPlan = subDoc.plan || user.subscriptionPlan || 'Pro';
+            user.expiresAt = nextBillingTime || new Date(Date.now() + 30*24*60*60*1000);
+            await user.save();
+          } else if (['CANCELLED','SUSPENDED','EXPIRED'].includes(String(status).toUpperCase())) {
+            user.subscriptionPlan = 'Free';
+            user.expiresAt = null;
+            await user.save();
+          }
+        }
+      }
+    }
+
+    // Handle payment events optionally
+    if (eventType === 'PAYMENT.SALE.COMPLETED' || eventType === 'PAYMENT.CAPTURE.COMPLETED') {
+      // resource may contain billing_agreement_id / invoice_id depending on flow
+      console.log('Payment completed resource:', resource && resource.id);
+      // optionally find subscription by id and mark payment processed
+    }
+
+    return res.status(200).send('OK');
+  } catch (err) {
+    console.error('webhook handler error:', err && (err.response?.data || err.message) ? (err.response?.data || err.message) : err);
+    return res.status(500).send('Server error');
+  }
+});
+
+app.post('/api/paypal/confirm-subscription', authenticate, express.json(), async (req, res) => {
+  try {
+    const { subscriptionID } = req.body || {};
+    const userId = req.userId;
+    if (!subscriptionID) return res.status(400).json({ message: 'subscriptionID required' });
+
+    const accessToken = await getPayPalAccessToken();
+    const subRes = await axios.get(`${PAYPAL_API_BASE}/v1/billing/subscriptions/${subscriptionID}`, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
+    });
+
+    const subData = subRes.data;
+    const status = subData.status;
+    const planId = subData.plan_id;
+    const startTime = subData.start_time ? new Date(subData.start_time) : null;
+    const nextBillingTime = subData.billing_info && subData.billing_info.next_billing_time ? new Date(subData.billing_info.next_billing_time) : null;
+
+    // map planId -> friendly plan name
+    const planMap = {};
+    if (PAYPAL_PLAN_PRO_ID) planMap[PAYPAL_PLAN_PRO_ID] = 'Pro';
+    if (PAYPAL_PLAN_ULTIMATE_ID) planMap[PAYPAL_PLAN_ULTIMATE_ID] = 'Ultimate';
+    const planName = planMap[planId] || 'Pro';
+
+    // upsert subscription record
+    const saved = await Subscription.findOneAndUpdate(
+      { subscriptionId: subscriptionID },
+      {
+        subscriptionId: subscriptionID,
+        userId,
+        plan: planName,
+        planId,
+        status,
+        startTime,
+        nextBillingTime,
+        raw: subData
+      },
+      { upsert: true, new: true }
+    );
+
+    // if active, update user
+    if (String(status).toUpperCase() === 'ACTIVE') {
+      const user = await User.findById(userId);
+      if (user) {
+        user.subscriptionPlan = planName;
+        user.expiresAt = nextBillingTime || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        await user.save();
+      }
+    }
+
+    return res.json({ success: true, status, plan: planName, nextBillingTime: saved.nextBillingTime });
+  } catch (err) {
+    console.error('confirm-subscription error', err && (err.response?.data || err.message) ? (err.response?.data || err.message) : err);
+    return res.status(500).json({ message: 'Failed to confirm subscription' });
   }
 });
 
@@ -778,21 +931,25 @@ if (process.env.SMTP_HOST) {
   });
 }
 
-// --- PayPal helper + endpoints -------------------------------------------
-const PAYPAL_API_BASE = process.env.PAYPAL_API_BASE || 'https://api-m.sandbox.paypal.com';
-const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
-const PAYPAL_SECRET = process.env.PAYPAL_SECRET;
+
 
 async function getPayPalAccessToken() {
   if (!PAYPAL_CLIENT_ID || !PAYPAL_SECRET) throw new Error('PayPal credentials not configured');
-  const tokenRes = await axios({
-    url: `${PAYPAL_API_BASE}/v1/oauth2/token`,
+  const tokenUrl = `${PAYPAL_API_BASE}/v1/oauth2/token`;
+  const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_SECRET}`).toString('base64');
+  const res = await axios({
     method: 'post',
-    auth: { username: PAYPAL_CLIENT_ID, password: PAYPAL_SECRET },
-    params: { grant_type: 'client_credentials' }
+    url: tokenUrl,
+    headers: {
+      'Authorization': `Basic ${auth}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    data: 'grant_type=client_credentials'
   });
-  return tokenRes.data.access_token;
+  return res.data.access_token;
 }
+
+
 
 // Price map (USD) — adjust as needed
 const PLAN_PRICES = {
