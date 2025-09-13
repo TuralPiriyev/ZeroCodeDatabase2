@@ -1,8 +1,10 @@
 // src/components/main/PlansSection.tsx
 import React from 'react';
 import PlanCard from './PlanCard';
+import { useNavigate } from 'react-router-dom';
 
 const PlansSection: React.FC = () => {
+  const navigate = useNavigate();
   const plans = [
     {
       title: 'Free',
@@ -33,10 +35,7 @@ const PlansSection: React.FC = () => {
         'API generation',
       ],
       highlighted: true,
-      // Pro üçün PayPal link
-      onSelect: () => {
-        window.location.href = 'https://www.paypal.com/ncp/payment/F2SDPFKYS3YVQ';
-      },
+      onSelect: () => { navigate('/subscribe?plan=pro'); },
       ctaText: 'Buy Pro',
     },
     {
@@ -54,9 +53,7 @@ const PlansSection: React.FC = () => {
       ],
       highlighted: false,
       // Team (ultimate) üçün PayPal link
-      onSelect: () => {
-        window.location.href = 'https://www.paypal.com/ncp/payment/6WMBAA5QYX4UA';
-      },
+    onSelect: () => { navigate('/subscribe?plan=ultimate'); },
       ctaText: 'Buy Team',
     },
   ];
