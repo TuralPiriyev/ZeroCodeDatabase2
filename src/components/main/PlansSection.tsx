@@ -1,42 +1,58 @@
+// src/components/main/PlansSection.tsx
 import React from 'react';
 import PlanCard from './PlanCard';
 import { useNavigate } from 'react-router-dom';
 
 const PlansSection: React.FC = () => {
   const navigate = useNavigate();
+
+  const goToSubscribe = (planKey: string, e?: React.MouseEvent<HTMLButtonElement>) => {
+    try {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      // first try client-side routing (SPA)
+      if (typeof navigate === 'function') {
+        navigate(`/subscribe?plan=${planKey}`);
+        // small delay to allow navigation; if route is not registered, fallback to full reload
+        setTimeout(() => {
+          if (window.location.pathname.indexOf('/subscribe') === -1 && !window.location.href.includes(`plan=${planKey}`)) {
+            // fallback
+            window.location.href = `/subscribe?plan=${planKey}`;
+          }
+        }, 150);
+        return;
+      }
+
+      // otherwise fallback
+      window.location.href = `/subscribe?plan=${planKey}`;
+    } catch (err) {
+      console.error('goToSubscribe error', err);
+      window.location.href = `/subscribe?plan=${planKey}`;
+    }
+  };
+
   const plans = [
     {
       title: 'Free',
       price: 'Free',
       description: 'Perfect for learning and small projects',
-      features: [
-        'Up to 3 database tables',
-        'Basic export options (SQL)',
-        'Community support',
-        'Visual table designer',
-        'Single user',
-      ],
+      features: [ /* ... */ ],
       highlighted: false,
-      onSelect: () => { navigate('/subscribe?plan=free'); },
+      onSelect: (e?: React.MouseEvent<HTMLButtonElement>) => goToSubscribe('free', e),
       ctaText: 'Choose Free',
     },
     {
       title: 'Pro',
       price: '$19',
       description: 'For professionals and serious projects',
-      features: [
-        'Unlimited database tables',
-        'All export formats',
-        'Priority email support',
-        'Advanced relationship mapping',
-        'Database versioning',
-        'API generation',
-      ],
+      features: [ /* ... */ ],
       highlighted: true,
-      // SPA yönləndirmə - səhifə reload etmədən keçid edir
-      onSelect: () => {
-        console.log('Pro clicked — redirecting to subscribe page');
-        navigate('/subscribe?plan=pro');
+      onSelect: (e?: React.MouseEvent<HTMLButtonElement>) => {
+        console.log('Pro clicked — redirecting to subscribe page', new Date().toISOString());
+        goToSubscribe('pro', e);
       },
       ctaText: 'Buy Pro',
     },
@@ -44,18 +60,9 @@ const PlansSection: React.FC = () => {
       title: 'Team',
       price: '$49',
       description: 'For teams working on multiple projects',
-      features: [
-        'Everything in Pro plan',
-        'Up to 5 team members',
-        'Team collaboration',
-        'Advanced access controls',
-        'Custom templates',
-        'Dedicated support',
-        'Database backups',
-      ],
+      features: [ /* ... */ ],
       highlighted: false,
-      // əgər hosted PayPal link istifadə etmək istəyirsənsə: window.open(url, '_blank')
-      onSelect: () => { navigate('/subscribe?plan=ultimate'); },
+      onSelect: (e?: React.MouseEvent<HTMLButtonElement>) => goToSubscribe('ultimate', e),
       ctaText: 'Buy Team',
     },
   ];
@@ -86,18 +93,6 @@ const PlansSection: React.FC = () => {
               onSelect={plan.onSelect}
             />
           ))}
-        </div>
-
-        <div className="mt-12 text-center">
-          <p className="text-gray-600 mb-4">
-            Need a custom plan for your enterprise?
-          </p>
-          <a
-            href="#contact"
-            className="text-[#3AAFF0] font-medium border-b-2 border-[#3AAFF0] hover:text-[#007ACC] hover:border-[#007ACC] transition-colors"
-          >
-            Contact us for custom pricing
-          </a>
         </div>
       </div>
     </section>
