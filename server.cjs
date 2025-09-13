@@ -136,6 +136,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// Serve a tiny runtime-config JS file that bootstraps window.__APP_ENV__ from process.env.
+app.get('/runtime-config.js', (req, res) => {
+  const cfg = {
+    PAYPAL_CLIENT_ID: process.env.PAYPAL_CLIENT_ID || process.env.VITE_PAYPAL_CLIENT_ID || process.env.REACT_APP_PAYPAL_CLIENT_ID || '',
+    PAYPAL_PLAN_PRO_ID: process.env.PAYPAL_PLAN_PRO_ID || process.env.PAYPAL_PRO_PLAN_ID || process.env.VITE_PAYPAL_PLAN_PRO_ID || process.env.REACT_APP_PAYPAL_PLAN_PRO_ID || '',
+    PAYPAL_PLAN_ULTIMATE_ID: process.env.PAYPAL_PLAN_ULTIMATE_ID || process.env.VITE_PAYPAL_PLAN_ULTIMATE_ID || process.env.REACT_APP_PAYPAL_PLAN_ULTIMATE_ID || ''
+  };
+  res.setHeader('Content-Type', 'application/javascript');
+  res.send(`window.__APP_ENV__ = ${JSON.stringify(cfg)};`);
+});
+
 // Dev-only extra logger and route enumeration
 if (process.env.NODE_ENV === 'development') {
   app.use((req, res, next) => {
