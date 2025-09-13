@@ -35,7 +35,10 @@ const PlansSection: React.FC = () => {
         'API generation',
       ],
       highlighted: true,
-      onSelect: () => { navigate('/subscribe?plan=pro'); },
+     onSelect: () => {
+  console.log('Pro clicked — redirecting to subscribe page');
+  window.location.href = '/subscribe?plan=pro';
+},
       ctaText: 'Buy Pro',
     },
     {
