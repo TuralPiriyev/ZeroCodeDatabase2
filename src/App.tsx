@@ -1,5 +1,4 @@
 // src/App.tsx
-import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 import { AuthProvider } from './context/AuthContext';
@@ -16,10 +15,14 @@ import { WorkspacePage } from './pages/WorkspacePage';
 
 import { PayPalScriptProvider } from '@paypal/react-paypal-js';
 
+// Resolve PayPal client id from common env var names (REACT_APP_, PAYPAL_, VITE_)
+const PAYPAL_CLIENT_ID = process.env.REACT_APP_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID || (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_PAYPAL_CLIENT_ID : undefined) || '';
+import SubscribePage from './pages/SubscribePage';
+
 function App() {
   return (
     <AuthProvider>
-      <PayPalScriptProvider>
+  <PayPalScriptProvider options={{ 'client-id': PAYPAL_CLIENT_ID, vault: true, intent: 'subscription' }}>
         <SubscriptionProvider>
           <PortfolioProvider>
             <BrowserRouter>
@@ -36,6 +39,8 @@ function App() {
                   <Route path="/main" element={<MainPage />} />
                   <Route path="/workspace" element={<WorkspacePage />} />
                   <Route path="/workspace/:id" element={<WorkspacePage />} />
+                  {/* Subscribe page should be available to logged-in users */}
+                  <Route path="/subscribe" element={<SubscribePage />} />
                 </Route>
 
                 {/* 404 */}
