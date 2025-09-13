@@ -12,12 +12,12 @@ const SubscribePage: React.FC = () => {
   const navigate = useNavigate();
   const plan = query.get('plan') || 'pro';
 
-  // Plan id-ləri build zamanı inject olunsun (REACT_APP_ prefiksi ilə)
+  // Try multiple env var prefixes so this works in various build setups
   const planId = plan === 'ultimate'
-    ? process.env.REACT_APP_PAYPAL_PLAN_ULTIMATE_ID
-    : process.env.REACT_APP_PAYPAL_PLAN_PRO_ID;
+    ? (process.env.REACT_APP_PAYPAL_PLAN_ULTIMATE_ID || process.env.PAYPAL_PLAN_ULTIMATE_ID || (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_PAYPAL_PLAN_ULTIMATE_ID) : undefined))
+    : (process.env.REACT_APP_PAYPAL_PLAN_PRO_ID || process.env.PAYPAL_PRO_PLAN_ID || (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_PAYPAL_PLAN_PRO_ID) : undefined));
 
-  const clientId = process.env.REACT_APP_PAYPAL_CLIENT_ID;
+  const clientId = process.env.REACT_APP_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID || (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_PAYPAL_CLIENT_ID : undefined);
 
   const initialOptions = useMemo(() => ({
     "client-id": clientId || '',

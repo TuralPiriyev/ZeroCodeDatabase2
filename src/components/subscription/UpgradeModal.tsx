@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, Crown, Zap, Shield, Sparkles, Check } from 'lucide-react';
 import { useSubscription, PLAN_DETAILS } from '../../context/SubscriptionContext';
 import PlanCard from './PlanCard';
@@ -14,12 +15,14 @@ const UpgradeModal: React.FC = () => {
 
   if (!showUpgradeModal) return null;
 
+  const navigate = useNavigate();
+
   const handlePlanSelect = (plan: 'free' | 'pro' | 'ultimate') => {
-    
-     if (plan === 'pro') {
-      window.location.href = 'https://www.paypal.com/ncp/payment/F2SDPFKYS3YVQ';
+    // Use SPA navigation to the subscribe page where PayPal buttons are rendered.
+    if (plan === 'pro') {
+      navigate('/subscribe?plan=pro');
     } else if (plan === 'ultimate') {
-      window.location.href = 'https://www.paypal.com/ncp/payment/6WMBAA5QYX4UA';
+      navigate('/subscribe?plan=ultimate');
     }
     changePlan(plan);
   };
