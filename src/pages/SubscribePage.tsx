@@ -158,7 +158,10 @@ const SubscribePage: React.FC = () => {
 
   const initialOptions = useMemo(() => ({
     'client-id': clientId || undefined,
-    vault: true,
+    // Temporarily set vault to false for debugging session-related errors.
+    // If this fixes the issue, consider using a server-driven vault flow or
+    // enabling vault only when you explicitly need to save payment methods.
+    vault: false,
     intent: 'subscription'
   }), [clientId]);
 
