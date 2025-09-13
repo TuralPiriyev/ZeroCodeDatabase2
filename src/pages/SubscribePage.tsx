@@ -192,9 +192,27 @@ const SubscribePage: React.FC = () => {
           <div id={`paypal-button-${plan}`}>
             <PayPalButtons
               style={{ layout: 'vertical', shape: 'pill', label: 'subscribe' }}
-              createSubscription={(_data: any, actions: any) => actions.subscription.create({ plan_id: planId })}
-              onApprove={async (data: any) => {
+              createSubscription={async (_data: any, actions: any) => {
                 try {
+                  const sub = await actions.subscription.create({ plan_id: planId });
+                  console.log('createSubscription result', sub);
+                  return sub;
+                } catch (err) {
+                  console.error('createSubscription error', err);
+                  // Surface user-facing error
+                  alert('Unable to start subscription. See console for details.');
+                  throw err;
+                }
+              }}
+              onApprove={async (data: any) => {
+                console.log('onApprove data', data);
+                try {
+                  if (!data || !data.subscriptionID) {
+                    console.error('No subscriptionID returned in onApprove', data);
+                    alert('Payment completed but no subscription ID received. Check console for details.');
+                    return;
+                  }
+                  // Send subscriptionID to server to confirm & attach to user
                   const resp = await fetch('/api/paypal/confirm-subscription', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -203,20 +221,25 @@ const SubscribePage: React.FC = () => {
                   });
                   const json = await resp.json();
                   if (resp.ok && json.success) {
-                    alert('Subscription active! Expires: ' + (json.nextBillingTime || json.expiresAt || 'unknown'));
+                    console.log('confirm-subscription success', json);
+                    alert('Subscription active! Plan: ' + (json.plan || 'unknown') + '\nNext billing: ' + (json.nextBillingTime || 'unknown'));
                     navigate('/account');
                   } else {
                     console.error('confirm failed', json);
-                    alert('Subscription confirmation failed. Contact support.');
+                    alert('Subscription confirmation failed on server. See console for details.');
                   }
                 } catch (err: any) {
                   console.error('confirm error', err);
-                  alert('Error confirming subscription.');
+                  alert('Error confirming subscription. See console.');
                 }
+              }}
+              onCancel={(data: any) => {
+                console.log('PayPal checkout cancelled', data);
+                alert('Payment canceled.');
               }}
               onError={(err: any) => {
                 console.error('PayPal Buttons error', err);
-                alert('Payment failed or canceled.');
+                alert('Payment failed or an error occurred. See console for details.');
               }}
             />
           </div>
