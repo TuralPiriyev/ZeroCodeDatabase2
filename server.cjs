@@ -131,10 +131,16 @@ app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Request logging middleware
+// Response logger (status + time)
 app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path} - ${new Date().toISOString()}`);
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    console.log(`${req.method} ${req.originalUrl} -> ${res.statusCode} (${ms}ms)`);
+  });
   next();
 });
+
 
 // Serve a tiny runtime-config JS file that bootstraps window.__APP_ENV__ from process.env.
 app.get('/runtime-config.js', (req, res) => {
@@ -208,6 +214,16 @@ try {
 } catch (e) {
   console.warn('Could not mount AI router in server.cjs (deferred):', e && e.message ? e.message : e);
 }
+// disable ETag globally (so browsers/proxies less likely to return 304 for API)
+app.disable('etag');
+
+// prevent caching on all /api routes
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 
 // MongoDB connection
 if (MONGO_URL) {
