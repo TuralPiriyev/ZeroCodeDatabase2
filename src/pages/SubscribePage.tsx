@@ -206,6 +206,21 @@ const SubscribePage: React.FC = () => {
   return (
     <div className="container mx-auto p-8">
       <h2 className="text-2xl font-bold mb-4">Subscribe to {plan === 'ultimate' ? 'Ultimate' : 'Pro'}</h2>
+      {plan === 'ultimate' && planId ? (
+        <div className="mb-4">
+          <button
+            id="buy-ultimate"
+            className="bg-blue-600 text-white px-4 py-2 rounded shadow"
+            onClick={() => {
+              // Direct full-page approval (server-side fallback will create subscription and redirect to PayPal)
+              const url = `/api/pay/fallback-subscription?plan_id=${encodeURIComponent(planId as string)}`;
+              window.location.href = url;
+            }}
+          >
+            Buy Ultimate (PayPal)
+          </button>
+        </div>
+      ) : null}
       {clientId ? (
         // Only render the PayPal SDK when we have a client id to avoid loading the SDK with an empty id
         <>
