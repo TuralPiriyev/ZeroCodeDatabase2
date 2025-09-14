@@ -21,6 +21,8 @@
             s.async = true;
             s.defer = true;
             s.crossOrigin = 'anonymous';
+            s.onload = function() { try { window.__PAYPAL_SDK_LOAD_ERROR__ = false; } catch(e){} };
+            s.onerror = function() { try { console.error('PayPal SDK failed to load'); window.__PAYPAL_SDK_LOAD_ERROR__ = true; } catch(e){} };
             document.head.appendChild(s);
           } else {
             // runtime-config not yet present or client id missing; leave it to app to load when available

@@ -1,7 +1,8 @@
 // src/pages/SubscribePage.tsx
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { loadPayPalSdk } from '../utils/loadPaypalSdk';
 
 function useQuery() {
   const loc = useLocation();
@@ -164,6 +165,23 @@ const SubscribePage: React.FC = () => {
     intent: 'subscription'
   }), [clientId]);
 
+  const [sdkLoadError, setSdkLoadError] = useState<boolean>(false);
+
+  useEffect(() => {
+    // If paypal is not present, try to use the helper to load it (idempotent)
+    if (typeof window !== 'undefined' && !(window as any).paypal) {
+      // If inline script previously set a global error flag, skip trying again
+      if ((window as any).__PAYPAL_SDK_LOAD_ERROR__) {
+        setSdkLoadError(true);
+        return;
+      }
+      // Try to load using helper
+      loadPayPalSdk({ clientId: clientId as string, vault: true, intent: 'subscription' })
+        .then(() => { setSdkLoadError(false); })
+        .catch((e) => { console.error('loadPayPalSdk failed', e); setSdkLoadError(true); });
+    }
+  }, [clientId]);
+
   // If planId missing, show user-friendly message and keep logs for debugging
   if (!planId) {
     return (
@@ -190,7 +208,17 @@ const SubscribePage: React.FC = () => {
       <h2 className="text-2xl font-bold mb-4">Subscribe to {plan === 'ultimate' ? 'Ultimate' : 'Pro'}</h2>
       {clientId ? (
         // Only render the PayPal SDK when we have a client id to avoid loading the SDK with an empty id
-        <PayPalScriptProvider options={initialOptions}>
+        <>
+        {sdkLoadError ? (
+          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded">
+            <p className="font-medium">PayPal SDK failed to load.</p>
+            <p className="text-sm text-gray-700">This can happen if the SDK script was blocked by your browser or a privacy extension. You can open the full-page approval flow instead.</p>
+            <div className="mt-2">
+              <a className="text-blue-600 underline" href={`/api/pay/fallback-subscription?plan_id=${planId}`} target="_blank" rel="noreferrer">Open PayPal full-page approval</a>
+            </div>
+          </div>
+        ) : (
+          <PayPalScriptProvider options={initialOptions}>
           <div id={`paypal-button-${plan}`}>
             <PayPalButtons
               style={{ layout: 'vertical', shape: 'pill', label: 'subscribe' }}
@@ -277,7 +305,9 @@ const SubscribePage: React.FC = () => {
               <a className="text-blue-600 underline" href={`/api/pay/fallback-subscription?plan_id=${planId}`} target="_blank" rel="noreferrer">Open PayPal full-page approval</a>
             </div>
           </div>
-        </PayPalScriptProvider>
+          </PayPalScriptProvider>
+        )}
+        </>
       ) : (
         <div className="p-4 text-sm text-gray-600">PayPal client id not available; check your runtime configuration.</div>
       )}
