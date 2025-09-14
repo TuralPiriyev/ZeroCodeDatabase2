@@ -17,7 +17,14 @@
           var clientId = cfg.PAYPAL_CLIENT_ID || '';
           if (clientId) {
             var s = document.createElement('script');
-            s.src = 'https://www.paypal.com/sdk/js?client-id=' + encodeURIComponent(clientId) + '&components=buttons&intent=subscription&vault=true';
+            // Optionally add a cache-busting param when runtime config requests it (useful for testing)
+            var cacheParam = '';
+            try {
+              if (cfg && (String(cfg.PAYPAL_DISABLE_CACHE) === 'true' || window.location.hostname === 'localhost')) {
+                cacheParam = '&_=' + Date.now();
+              }
+            } catch (e) { /* ignore */ }
+            s.src = 'https://www.paypal.com/sdk/js?client-id=' + encodeURIComponent(clientId) + '&components=buttons&intent=subscription&vault=true' + cacheParam;
             s.async = true;
             s.defer = true;
             s.crossOrigin = 'anonymous';
