@@ -351,6 +351,62 @@ app.use('/api/portfolios', authenticate, portfolioRoutes);
 app.use('/api/workspaces', authenticate, workspaceRoutes);
 app.use('/api/schemas', authenticate, schemaRoutes);
 
+// Server-side fallback to create subscription and redirect to PayPal approval
+app.get('/api/pay/fallback-subscription', async (req, res) => {
+  try {
+    const planId = req.query.plan_id || req.query.plan || '';
+    if (!planId) return res.status(400).json({ error: 'plan_id query parameter required' });
+
+    console.log('[FALLBACK] Creating subscription server-side for plan', planId);
+
+    // Get access token from PayPal
+    const tokenResp = await axios({
+      method: 'post',
+      url: `${PAYPAL_API_BASE.replace(/\/+$/, '')}/v1/oauth2/token`,
+      auth: { username: PAYPAL_CLIENT_ID, password: PAYPAL_SECRET },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      data: 'grant_type=client_credentials'
+    });
+
+    const accessToken = tokenResp && tokenResp.data && tokenResp.data.access_token;
+    if (!accessToken) {
+      console.error('[FALLBACK] no access token from PayPal', tokenResp && tokenResp.data);
+      return res.status(502).json({ error: 'Unable to fetch PayPal access token' });
+    }
+
+    // Create subscription server-side
+    const createResp = await axios({
+      method: 'post',
+      url: `${PAYPAL_API_BASE.replace(/\/+$/, '')}/v1/billing/subscriptions`,
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      data: {
+        plan_id: planId,
+        application_context: {
+          brand_name: 'ZeroCodeDB',
+          return_url: `${FRONTEND_ORIGIN || 'http://localhost:5173'}/account`,
+          cancel_url: `${FRONTEND_ORIGIN || 'http://localhost:5173'}/subscribe?cancelled=true`,
+          shipping_preference: 'NO_SHIPPING'
+        }
+      }
+    });
+
+    const links = createResp && createResp.data && createResp.data.links;
+    const approve = Array.isArray(links) && links.find(l => l.rel === 'approve');
+    if (approve && approve.href) {
+      console.log('[FALLBACK] Redirecting user to PayPal approve url', approve.href);
+      return res.redirect(302, approve.href);
+    }
+
+    console.error('[FALLBACK] No approve link in PayPal response', createResp && createResp.data);
+    return res.status(502).json({ error: 'No approval URL returned from PayPal', details: createResp && createResp.data });
+  } catch (err) {
+    console.error('[FALLBACK] error creating subscription', err && err.response && err.response.data ? err.response.data : err);
+    const status = err && err.response && err.response.status ? err.response.status : 500;
+    const data = err && err.response && err.response.data ? err.response.data : { message: err.message || 'Unknown error' };
+    return res.status(status).json({ error: 'PayPal subscription creation failed', details: data });
+  }
+});
+
 // User validation endpoint
 app.post('/api/users/validate', async (req, res) => {
   try {
