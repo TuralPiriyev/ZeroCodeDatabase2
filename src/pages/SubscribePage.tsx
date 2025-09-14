@@ -1,7 +1,7 @@
 // src/pages/SubscribePage.tsx
 import React, { useMemo, useEffect, useState } from 'react';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { loadPayPalSdk } from '../utils/loadPaypalSdk';
 
 function useQuery() {
@@ -50,7 +50,6 @@ function resolveEnv(...keys: string[]) {
 
 const SubscribePage: React.FC = () => {
   const query = useQuery();
-  const navigate = useNavigate();
   const plan = (query.get('plan') || 'pro').toLowerCase();
 
   // Candidate env names for plan IDs and client id (cover common naming mistakes)
@@ -157,11 +156,11 @@ const SubscribePage: React.FC = () => {
     console.log('=== end debug ===');
   }, [plan, resolvedPro.key, resolvedUltimate.key, resolvedClient.key]);
 
+  // Use clientId/planId resolved from environment/runtime config
   const initialOptions = useMemo(() => ({
     'client-id': clientId || undefined,
-  // vault must be true for subscription flows in many PayPal setups.
-  // Keep vault enabled to ensure the SDK accepts intent=subscription.
-  vault: true,
+    // vault must be true for subscription flows in many PayPal setups.
+    vault: true,
     intent: 'subscription'
   }), [clientId]);
 
@@ -236,58 +235,42 @@ const SubscribePage: React.FC = () => {
           <PayPalScriptProvider options={initialOptions}>
           <div id={`paypal-button-${plan}`}>
             <PayPalButtons
-              style={{ layout: 'vertical', shape: 'pill', label: 'subscribe' }}
+              style={{ layout: 'vertical', shape: 'pill', label: 'subscribe', color: 'gold' }}
               createSubscription={async (_data: any, actions: any) => {
-                try {
-                  // Explicitly tell PayPal we do NOT require shipping information here.
-                  // This avoids address/phone validation UI in the PayPal popup for subscriptions
-                  // when your product does not require shipping.
-                  const sub = await actions.subscription.create({
-                    plan_id: planId,
-                    application_context: {
-                      shipping_preference: 'NO_SHIPPING'
-                    }
-                  });
-                  console.log('createSubscription result', sub);
-                  return sub;
-                } catch (err: any) {
-                  // Improve logging to capture PayPal error payloads (details/message)
-                  console.error('createSubscription error', err);
-                  if (err && (err.details || err.message)) {
-                    console.error('PayPal error details:', err.details || err.message);
-                  }
-                  // Surface user-facing error
-                  alert('Unable to start subscription. See console for details.');
-                  throw err;
-                }
+                // Use the resolved planId from env/runtime config
+                return actions.subscription.create({
+                  plan_id: planId,
+                  application_context: { shipping_preference: 'NO_SHIPPING' }
+                });
               }}
               onApprove={async (data: any) => {
-                console.log('onApprove data', data);
+                // Requirement: log subscriptionID and show alert
                 try {
-                  if (!data || !data.subscriptionID) {
-                    console.error('No subscriptionID returned in onApprove', data);
-                    alert('Payment completed but no subscription ID received. Check console for details.');
-                    return;
+                  const subscriptionID = data && data.subscriptionID;
+                  console.log('Subscription ID:', subscriptionID);
+                  // Send to server to confirm and attach to user
+                  try {
+                    const resp = await fetch('/api/paypal/confirm-subscription', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      credentials: 'include',
+                      body: JSON.stringify({ subscriptionID })
+                    });
+                    const json = await resp.json();
+                    if (resp.ok && json.success) {
+                      alert('Subscription successful: ' + subscriptionID);
+                    } else if (resp.status === 401) {
+                      alert('Subscription created but you are not logged in. Please log in to link it to your account.');
+                    } else {
+                      console.error('Server confirm failed', json);
+                      alert('Subscription created but server confirmation failed. See console for details.');
+                    }
+                  } catch (e) {
+                    console.error('Error confirming subscription on server', e);
+                    alert('Subscription created but failed to contact server for confirmation.');
                   }
-                  // Send subscriptionID to server to confirm & attach to user
-                  const resp = await fetch('/api/paypal/confirm-subscription', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({ subscriptionID: data.subscriptionID })
-                  });
-                  const json = await resp.json();
-                  if (resp.ok && json.success) {
-                    console.log('confirm-subscription success', json);
-                    alert('Subscription active! Plan: ' + (json.plan || 'unknown') + '\nNext billing: ' + (json.nextBillingTime || 'unknown'));
-                    navigate('/account');
-                  } else {
-                    console.error('confirm failed', json);
-                    alert('Subscription confirmation failed on server. See console for details.');
-                  }
-                } catch (err: any) {
-                  console.error('confirm error', err);
-                  alert('Error confirming subscription. See console.');
+                } catch (e) {
+                  console.error('onApprove handler error', e);
                 }
               }}
               onCancel={(data: any) => {
@@ -295,24 +278,8 @@ const SubscribePage: React.FC = () => {
                 alert('Payment canceled.');
               }}
               onError={(err: any) => {
-                // Log full error shape so you can inspect `err.details` returned by PayPal
-                console.error('PayPal Buttons error', err);
-                if (err && (err.details || err.message)) {
-                  console.error('PayPal onError details:', err.details || err.message);
-                }
-                // Offer an automatic fallback to server-side approval which avoids SDK popup/session issues
-                try {
-                  const ask = window.confirm('PayPal popup failed or blocked. Open full-page PayPal approval instead?');
-                  if (ask) {
-                    // Use the same planId we resolved earlier and hit the server-side fallback route we added
-                    const fallbackUrl = `/api/pay/fallback-subscription?plan_id=${encodeURIComponent(planId as string)}`;
-                    window.location.href = fallbackUrl;
-                    return;
-                  }
-                } catch (e) {
-                  // ignore window issues
-                }
-                alert('Payment failed or an error occurred. See console for details.');
+                console.error('PayPal error:', err);
+                alert('Payment failed');
               }}
             />
             <div className="mt-4 text-sm">
