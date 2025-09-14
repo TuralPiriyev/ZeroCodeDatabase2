@@ -8,6 +8,29 @@
   <body>
     <div id="root"></div>
     <script src="/runtime-config.js"></script>
+    <!-- Dynamically inject PayPal JS SDK using runtime-config to avoid baking client-id into build -->
+    <script>
+      (function(){
+        try {
+          // runtime-config.js sets window.__APP_ENV__ with PAYPAL_CLIENT_ID
+          var cfg = (window && window.__APP_ENV__) || {};
+          var clientId = cfg.PAYPAL_CLIENT_ID || '';
+          if (clientId) {
+            var s = document.createElement('script');
+            s.src = 'https://www.paypal.com/sdk/js?client-id=' + encodeURIComponent(clientId) + '&components=buttons&intent=subscription&vault=true';
+            s.async = true;
+            s.defer = true;
+            s.crossOrigin = 'anonymous';
+            document.head.appendChild(s);
+          } else {
+            // runtime-config not yet present or client id missing; leave it to app to load when available
+            console.warn('PayPal client id not available in window.__APP_ENV__; PayPal SDK will be loaded by app code if needed.');
+          }
+        } catch (e) {
+          console.error('Error injecting PayPal SDK', e);
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
