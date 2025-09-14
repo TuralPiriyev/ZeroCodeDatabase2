@@ -257,9 +257,25 @@ const SubscribePage: React.FC = () => {
                 if (err && (err.details || err.message)) {
                   console.error('PayPal onError details:', err.details || err.message);
                 }
+                // Offer an automatic fallback to server-side approval which avoids SDK popup/session issues
+                try {
+                  const ask = window.confirm('PayPal popup failed or blocked. Open full-page PayPal approval instead?');
+                  if (ask) {
+                    // Use the same planId we resolved earlier and hit the server-side fallback route we added
+                    const fallbackUrl = `/api/pay/fallback-subscription?plan_id=${encodeURIComponent(planId as string)}`;
+                    window.location.href = fallbackUrl;
+                    return;
+                  }
+                } catch (e) {
+                  // ignore window issues
+                }
                 alert('Payment failed or an error occurred. See console for details.');
               }}
             />
+            <div className="mt-4 text-sm">
+              <p>If the PayPal popup is blocked or shows an error, you can open a full-page approval flow instead:</p>
+              <a className="text-blue-600 underline" href={`/api/pay/fallback-subscription?plan_id=${planId}`} target="_blank" rel="noreferrer">Open PayPal full-page approval</a>
+            </div>
           </div>
         </PayPalScriptProvider>
       ) : (
