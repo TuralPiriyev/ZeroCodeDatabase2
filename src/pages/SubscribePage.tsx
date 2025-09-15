@@ -157,12 +157,20 @@ const SubscribePage: React.FC = () => {
   }, [plan, resolvedPro.key, resolvedUltimate.key, resolvedClient.key]);
 
   // Use clientId/planId resolved from environment/runtime config
+  // Hardcoded Ultimate credentials for now (will move to .env later)
+  const ULTIMATE_CLIENT_ID = 'AWrBv-xNQEaE_9zAL2iymfsJgLgbG-esgIeSeRNQAahjieEnZMkgsnKtX1nEKyeX1U3mN0GTfm21oXTS';
+  const ULTIMATE_PLAN_ID = 'P-1LD60420K0312402UNDDYS2Q';
+
+  // choose effective client and plan depending on requested plan
+  const effectiveClientId = plan === 'ultimate' ? ULTIMATE_CLIENT_ID : clientId;
+  const effectivePlanId = plan === 'ultimate' ? ULTIMATE_PLAN_ID : planId;
+
   const initialOptions = useMemo(() => ({
-    'client-id': clientId || undefined,
+    'client-id': effectiveClientId || undefined,
     // vault must be true for subscription flows in many PayPal setups.
     vault: true,
     intent: 'subscription'
-  }), [clientId]);
+  }), [effectiveClientId]);
 
   const [sdkLoadError, setSdkLoadError] = useState<boolean>(false);
 
@@ -175,7 +183,7 @@ const SubscribePage: React.FC = () => {
         return;
       }
       // Try to load using helper
-      loadPayPalSdk({ clientId: clientId as string, vault: true, intent: 'subscription' })
+      loadPayPalSdk({ clientId: (effectiveClientId as string), vault: true, intent: 'subscription' })
         .then(() => { setSdkLoadError(false); })
         .catch((e) => { console.error('loadPayPalSdk failed', e); setSdkLoadError(true); });
     }
@@ -237,9 +245,9 @@ const SubscribePage: React.FC = () => {
             <PayPalButtons
               style={{ layout: 'vertical', shape: 'pill', label: 'subscribe', color: 'gold' }}
               createSubscription={async (_data: any, actions: any) => {
-                // Use the resolved planId from env/runtime config
+                // Use the effectivePlanId (Ultimate hardcoded or Pro from env)
                 return actions.subscription.create({
-                  plan_id: planId,
+                  plan_id: effectivePlanId,
                   application_context: { shipping_preference: 'NO_SHIPPING' }
                 });
               }}
