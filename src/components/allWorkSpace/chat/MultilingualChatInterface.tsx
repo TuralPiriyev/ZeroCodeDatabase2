@@ -141,7 +141,9 @@ const MultilingualChatInterface: React.FC = () => {
       return;
     }
 
-    setIsTyping(true);
+  // simple client-side debounce to avoid rapid repeated sends
+  if (isTyping) return;
+  setIsTyping(true);
 
     try {
       const contextSuggestions: string[] = [];
@@ -497,23 +499,29 @@ async function sendToAI(question: string, language: string, userId?: string, con
     } catch (e) {}
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
 
-  if (!res.ok) {
-    // In development provide some debug text
-    if ((typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development')) {
-      const txt = await res.text().catch(() => '');
-      // eslint-disable-next-line no-console
-      console.error('[MultilingualChat] fetch error', res.status, txt);
-    }
-    throw new Error('Service error');
-  }
+      if (res.status === 429) {
+        const retryAfter = res.headers.get('Retry-After') || Math.ceil((60*1000)/1000).toString();
+        const svc = `Too many requests. Try again in ${retryAfter} seconds.`;
+        // show localized message if possible
+  const localized = SERVICE_UNAVAILABLE[language as keyof typeof SERVICE_UNAVAILABLE] || svc;
+  return { answer: localized };
+      }
 
-  const json = await res.json();
+      if (!res.ok) {
+        if ((typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development')) {
+          const txt = await res.text().catch(() => '');
+          console.error('[MultilingualChat] fetch error', res.status, txt);
+        }
+        throw new Error('Service error');
+      }
+
+      const json = await res.json();
   // support health responder or answer payload
   // If server returned structured answer object, encode as marker
   if (json && json.answer && typeof json.answer === 'object') {

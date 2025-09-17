@@ -17,7 +17,21 @@ const HF_MODEL = process.env.HF_MODEL || 'gpt2';
 // 30s timeout, 60s cache
 const hf = new HuggingFaceProvider({ apiKey: HF_KEY, model: HF_MODEL, timeoutMs: 30000, cacheTtl: 60*1000 });
 
-const limiter = rateLimit({ windowMs: 60*1000, max: 30, standardHeaders: true, legacyHeaders: false });
+const RATE_LIMIT_WINDOW_MS = Number(process.env.AI_RATE_LIMIT_WINDOW_MS) || 60*1000;
+const RATE_LIMIT_MAX = Number(process.env.AI_RATE_LIMIT_MAX) || 30;
+const limiter = rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res /*, next*/) => {
+    // Calculate retry-after in seconds and include header for clients
+    const retryAfterSec = Math.ceil(RATE_LIMIT_WINDOW_MS / 1000);
+    try { console.warn('[HF_ROUTE] rate limit exceeded for', req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress); } catch (e) {}
+    res.setHeader('Retry-After', String(retryAfterSec));
+    res.status(429).json({ error: `Rate limit exceeded. Try again in ${retryAfterSec} seconds.` });
+  }
+});
 
 const REJECTION_MESSAGES = {
   en: "I only answer questions related to databases (SQL and database programming).",
