@@ -85,6 +85,14 @@ if (process.env.FORCE_AI_DEBUG === 'true') {
   console.log('⚠️ TEMP_AI_DEBUG route enabled at /api/ai/dbquery (FORCE_AI_DEBUG=true)');
 }
 
+
+require('dotenv').config();
+const HF_KEY = process.env.HF_KEY;
+const HF_MODEL = process.env.HF_MODEL;
+
+
+
+
 // Socket.IO setup with CORS
 const io = socketIo(server, {
   path: '/ws/portfolio-updates',   // frontend ilə eyni olmalıdır
@@ -203,14 +211,26 @@ app.use((req, res, next) => {
 
 // Deferred mount of AI router: do this after app and proxy normalization middleware
 try {
-  const aiRouter = require('./src/api/dbquery.cjs');
-  // Keep a reference to the handler for root forwarding fallback
-  aiHandler = aiRouter.handleDbQuery || aiHandler || null;
-  app.use('/api/ai', aiRouter);
-  app.use('/ai', aiRouter);
-  // Mounting at /api as a last-resort so /api/dbquery or similar paths may resolve
-  app.use('/api', aiRouter);
-  console.log('Mounted AI router at /api/ai, /ai, and /api (deferred mount)');
+  // Prefer HF-backed router if present
+  let mounted = false;
+  try {
+    const hfRouter = require('./src/api/dbquery.hf.cjs');
+    aiHandler = hfRouter.handleDbQuery || aiHandler || null;
+    app.use('/api/ai', hfRouter);
+    app.use('/ai', hfRouter);
+    app.use('/api', hfRouter);
+    mounted = true;
+    console.log('Mounted HF AI router at /api/ai, /ai, and /api');
+  } catch (e) {
+    // fallback to existing router
+    const aiRouter = require('./src/api/dbquery.cjs');
+    // Keep a reference to the handler for root forwarding fallback
+    aiHandler = aiRouter.handleDbQuery || aiHandler || null;
+    app.use('/api/ai', aiRouter);
+    app.use('/ai', aiRouter);
+    app.use('/api', aiRouter);
+    console.log('Mounted default AI router at /api/ai, /ai, and /api (deferred mount)');
+  }
 } catch (e) {
   console.warn('Could not mount AI router in server.cjs (deferred):', e && e.message ? e.message : e);
 }

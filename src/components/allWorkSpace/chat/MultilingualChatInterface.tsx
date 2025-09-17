@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+// alias for local component state hook to avoid naming confusion
+const useLocalState = useState;
 import { Send, Bot, User, Lightbulb, Lock, Globe, Loader } from 'lucide-react';
 import { useSubscription } from '../../../context/SubscriptionContext';
 import { isLikelyDbQuestion } from '../../../utils/dbClassifier';
@@ -151,15 +153,47 @@ const MultilingualChatInterface: React.FC = () => {
 
       const result = await sendToAI(trimmed, selectedLanguage.code, undefined, contextSuggestions.length ? contextSuggestions : undefined);
 
-      const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        content: result.answer,
-        sender: 'ai',
-        timestamp: new Date(),
-        language: selectedLanguage.code,
-      };
-
-      setMessages(prev => [...prev, aiResponse]);
+      // If backend returns a structured payload marker, expand into explanation + hidden SQL
+      if (result && typeof result.answer === 'string' && result.answer.startsWith('__STRUCTURED__')) {
+        try {
+          const raw = result.answer.replace('__STRUCTURED__', '');
+          const parsed = JSON.parse(raw);
+          const explanationMsg: Message = {
+            id: (Date.now() + 1).toString() + '_exp',
+            content: parsed.explanation || 'No explanation provided.',
+            sender: 'ai',
+            timestamp: new Date(),
+            language: parsed.language || selectedLanguage.code,
+          };
+          const sqlMsg: Message = {
+            id: (Date.now() + 2).toString() + '_sql',
+            content: `--SQL--${parsed.sql || ''}`,
+            sender: 'ai',
+            timestamp: new Date(),
+            language: parsed.language || selectedLanguage.code,
+          };
+          setMessages(prev => [...prev, explanationMsg, sqlMsg]);
+        } catch (e) {
+          // fallback to raw answer
+          const aiResponse: Message = {
+            id: (Date.now() + 1).toString(),
+            content: result.answer,
+            sender: 'ai',
+            timestamp: new Date(),
+            language: selectedLanguage.code,
+          };
+          setMessages(prev => [...prev, aiResponse]);
+        }
+      } else {
+        const aiResponse: Message = {
+          id: (Date.now() + 1).toString(),
+          content: result.answer,
+          sender: 'ai',
+          timestamp: new Date(),
+          language: selectedLanguage.code,
+        };
+        setMessages(prev => [...prev, aiResponse]);
+      }
     } catch (err) {
       const svc = SERVICE_UNAVAILABLE[selectedLanguage.code as keyof typeof SERVICE_UNAVAILABLE] || SERVICE_UNAVAILABLE.en;
       const aiResponse: Message = {
@@ -298,7 +332,12 @@ const MultilingualChatInterface: React.FC = () => {
                   : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white rounded-bl-none'
               }`}
             >
-              {message.content}
+              {/* If message contains SQL marker show a toggle */}
+              {message.sender === 'ai' && typeof message.content === 'string' && message.content.startsWith('--SQL--') ? (
+                <SQLBlock sql={message.content.replace('--SQL--','')} />
+              ) : (
+                message.content
+              )}
             </div>
             
             {message.sender === 'user' && (
@@ -395,6 +434,21 @@ const MultilingualChatInterface: React.FC = () => {
   );
 };
 
+// Local collapsible SQL block component
+const SQLBlock: React.FC<{ sql: string }> = ({ sql }) => {
+  const [open, setOpen] = useLocalState(false);
+  return (
+    <div>
+      <button onClick={() => setOpen(!open)} className="text-xs text-sky-600 underline mb-2">
+        {open ? 'Hide SQL' : 'Show SQL'}
+      </button>
+      {open && (
+        <pre className="mt-2 p-3 bg-gray-800 text-white rounded text-sm overflow-auto">{sql}</pre>
+      )}
+    </div>
+  );
+};
+
 // Localized rejection and service messages (shared with server)
 const REJECTION_MESSAGES: Record<string, string> = {
   en: "I only answer questions related to databases (SQL and database programming).",
@@ -461,6 +515,14 @@ async function sendToAI(question: string, language: string, userId?: string, con
 
   const json = await res.json();
   // support health responder or answer payload
+  // If server returned structured answer object, encode as marker
+  if (json && json.answer && typeof json.answer === 'object') {
+    const a = json.answer as any;
+    const explanation = a.explanation || '';
+    const sql = a.sql || '';
+    const payload = JSON.stringify({ explanation, sql, params: a.params || {}, language: a.language || language });
+    return { answer: `__STRUCTURED__${payload}` };
+  }
   return { answer: (json.answer as string) || (json.status as string) || '' };
 }
 
