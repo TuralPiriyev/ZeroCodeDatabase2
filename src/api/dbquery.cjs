@@ -50,62 +50,24 @@ function escapeRegExp(str) {
 }
 
 async function callOpenAIChat(messages, max_tokens = 800) {
-  if (!OPENAI_API_KEY) throw new Error('Missing OPENAI_API_KEY');
-  // Retry wrapper: exponential backoff for transient errors (429, 502, 503, network)
-  const maxAttempts = 3;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          messages,
-          max_tokens,
-          temperature: 0.2,
-        }),
-      });
+  // Route model calls through the server proxy to centralize API keys (HF_KEY/OpenAI)
+  const proxyUrl = `http://localhost:${process.env.PORT || 5000}/api/proxy/dbquery`;
+  const body = { messages, model: MODEL, max_tokens };
+  const res = await fetch(proxyUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => '<no body>');
-        const err = new Error(`OpenAI error: ${res.status} ${String(text).slice(0, 200)}`);
-        err.status = res.status;
-        // Retry on 429/502/503
-        if ([429, 502, 503].includes(res.status) && attempt < maxAttempts) {
-          const backoff = Math.pow(2, attempt) * 100 + Math.floor(Math.random() * 100);
-          safeLog(`[AI_ROUTE] transient OpenAI status ${res.status}, retrying after ${backoff}ms (attempt ${attempt})`);
-          await new Promise(r => setTimeout(r, backoff));
-          continue;
-        }
-        throw err;
-      }
-
-      const j = await res.json();
-      return j;
-    } catch (err) {
-      // If header value caused fetch to throw, provide clearer guidance
-      const m = String(err.message || '').toLowerCase();
-      if (/illegal http header value|invalid header/.test(m)) {
-        const e2 = new Error('OPENAI_API_KEY appears to be malformed (contains illegal characters). Please set it without quotes/newlines.');
-        e2.isBadKey = true;
-        throw e2;
-      }
-
-      // Retry on network-like errors
-      if (attempt < maxAttempts && (/network|fetch|timeout|failed to fetch|econnreset|eai_again/.test(m) || err.status === 429 || err.status === 502 || err.status === 503)) {
-        const backoff = Math.pow(2, attempt) * 100 + Math.floor(Math.random() * 100);
-        safeLog(`[AI_ROUTE] callOpenAIChat attempt ${attempt} failed (${m}), retrying in ${backoff}ms`);
-        await new Promise(r => setTimeout(r, backoff));
-        continue;
-      }
-
-      safeLog('[AI_ROUTE] callOpenAIChat final error:', err && err.message ? err.message : String(err));
-      throw err;
-    }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const err = new Error(`Proxy/OpenAI error: ${res.status} ${text}`);
+    err.status = res.status;
+    throw err;
   }
+
+  const j = await res.json();
+  return j;
 }
 
 router.get('/health', (req, res) => {

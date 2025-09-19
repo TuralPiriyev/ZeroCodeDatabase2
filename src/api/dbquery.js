@@ -46,25 +46,18 @@ function escapeRegExp(str) {
 }
 
 async function callOpenAIChat(messages, max_tokens = 800) {
-  if (!OPENAI_API_KEY) throw new Error('Missing OPENAI_API_KEY');
-
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  // Route model calls through the server proxy to avoid exposing keys and to support HF fallback
+  const proxyUrl = `http://localhost:${process.env.PORT || 5000}/api/proxy/dbquery`;
+  const body = { messages, model: MODEL, max_tokens };
+  const res = await fetch(proxyUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages,
-      max_tokens,
-      temperature: 0.2,
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`OpenAI error: ${res.status} ${text}`);
+    const text = await res.text().catch(() => '');
+    throw new Error(`Proxy/OpenAI error: ${res.status} ${text}`);
   }
 
   const j = await res.json();

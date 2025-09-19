@@ -29,9 +29,12 @@ function getBucket(key) {
 
 router.post('/dbquery', async (req, res) => {
   try {
-    const upstreamUrl = 'https://zerocodedb.online/api/ai/dbquery';
-  // Backwards-compatible environment variable: prefer HF_KEY, fall back to ZEROCODEDB_API_KEY
-  const API_KEY = (process.env.HF_KEY || process.env.ZEROCODEDB_API_KEY || '').trim();
+  // Backwards-compatible environment variable: prefer HF_KEY, fall back to ZEROCODEDB_API_KEY, then OPENAI_API_KEY
+  const API_KEY = (process.env.HF_KEY || process.env.ZEROCODEDB_API_KEY || process.env.OPENAI_API_KEY || '').trim();
+
+  // Decide upstream target: if only OPENAI_API_KEY is present (and HF/ZC not set), target OpenAI
+  const useOpenAIUpstream = !!(process.env.OPENAI_API_KEY) && !process.env.HF_KEY && !process.env.ZEROCODEDB_API_KEY;
+  const upstreamUrl = useOpenAIUpstream ? 'https://api.openai.com/v1/chat/completions' : 'https://zerocodedb.online/api/ai/dbquery';
 
   // If no API key is configured, operate in mock mode and simulate upstream rate limits
   if (!API_KEY) {
@@ -53,7 +56,7 @@ router.post('/dbquery', async (req, res) => {
       return res.status(429).json({ error: `Rate limit exceeded (mock). Try again in ${retryAfterSec} seconds.` });
     }
 
-    // Real upstream proxying when API key is present
+    // Real upstream proxying when API key is present (upstreamUrl chosen above)
     const upstream = await axios.post(upstreamUrl, req.body || {}, {
       headers: {
         'Authorization': `Bearer ${API_KEY}`,
