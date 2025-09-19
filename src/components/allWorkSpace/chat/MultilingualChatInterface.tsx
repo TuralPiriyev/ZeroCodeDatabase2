@@ -468,26 +468,8 @@ async function sendToAI(question: string, language: string, userId?: string, con
   const payload: any = { question, language };
   if (userId) payload.userId = userId;
   if (contextSuggestions) payload.contextSuggestions = contextSuggestions;
-  // Determine API base from environment (CRA: REACT_APP_API_BASE, Vite: VITE_API_BASE_URL)
-  const reactBase = (typeof process !== 'undefined' && process.env && (process.env.REACT_APP_API_BASE as string)) || '';
-  const viteBase = (typeof import.meta !== 'undefined' && import.meta.env && (import.meta.env.VITE_API_BASE_URL as string)) || '';
-  const apiBase = (reactBase || viteBase || '').toString();
-
-  // Safe join to avoid double slashes
-  const joinUrl = (base: string, path: string) => {
-    if (!base) return path.startsWith('/') ? path : `/${path}`;
-    let b = base.replace(/\/$/, '');
-    let p = path.replace(/^\//, '');
-    // Collapse duplicated '/api' segments: e.g., base endsWith('/api') and path startsWith('api/...')
-    if (/\/api\/?$/i.test(b) && /^api\//i.test(p)) {
-      p = p.replace(/^api\//i, '');
-    }
-    // Remove accidental duplicate slashes
-    return `${b}/${p}`.replace(/([^:])\/\/+/, '$1/');
-  };
-
-  // Use server-side proxy to avoid exposing third-party API keys to the client
-  const url = joinUrl(apiBase, '/api/proxy/dbquery');
+  // Use relative proxy path to ensure same-origin requests and avoid CORS/proxy header issues
+  const url = '/api/proxy/dbquery';
 
   // Dev-only logging to help debug 404s; does not print secrets
   if ((typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development') || (typeof window !== 'undefined' && (window as any).__DEV__)) {
@@ -515,21 +497,24 @@ async function sendToAI(question: string, language: string, userId?: string, con
       // dynamic import to avoid loading queue in non-browser environments
       const { enqueueRequest } = await import('../../../utils/aiQueue');
       const queuedRes = await enqueueRequest(url, opts);
-
       const res = queuedRes;
 
       if (res.status === 429) {
-        const retryAfter = res.headers.get('Retry-After') || Math.ceil((60*1000)/1000).toString();
+        const retryAfter = res.headers.get('Retry-After') || '1';
         const svc = `Too many requests. Try again in ${retryAfter} seconds.`;
-        // show localized message if possible
-  const localized = SERVICE_UNAVAILABLE[language as keyof typeof SERVICE_UNAVAILABLE] || svc;
-  return { answer: localized };
+        return { answer: svc };
+      }
+
+      if (res.status === 502 || res.status === 503) {
+        // Upstream service unavailable - return localized friendly message
+        const localized = SERVICE_UNAVAILABLE[language as keyof typeof SERVICE_UNAVAILABLE] || SERVICE_UNAVAILABLE.en;
+        return { answer: localized };
       }
 
       if (!res.ok) {
+        const txt = await res.text().catch(() => '');
         if ((typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development')) {
-          const txt = await res.text().catch(() => '');
-          console.error('[MultilingualChat] fetch error', res.status, txt);
+          console.error('[MultilingualChat] proxy error', res.status, txt);
         }
         throw new Error('Service error');
       }
