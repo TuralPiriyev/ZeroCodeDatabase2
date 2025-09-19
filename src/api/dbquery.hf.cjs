@@ -19,19 +19,55 @@ const hf = new HuggingFaceProvider({ apiKey: HF_KEY, model: HF_MODEL, timeoutMs:
 
 const RATE_LIMIT_WINDOW_MS = Number(process.env.AI_RATE_LIMIT_WINDOW_MS) || 60*1000;
 const RATE_LIMIT_MAX = Number(process.env.AI_RATE_LIMIT_MAX) || 30;
-const limiter = rateLimit({
-  windowMs: RATE_LIMIT_WINDOW_MS,
-  max: RATE_LIMIT_MAX,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req, res /*, next*/) => {
-    // Calculate retry-after in seconds and include header for clients
-    const retryAfterSec = Math.ceil(RATE_LIMIT_WINDOW_MS / 1000);
-    try { console.warn('[HF_ROUTE] rate limit exceeded for', req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress); } catch (e) {}
+// Token-bucket based limiter: allows short bursts while enforcing sustained rate.
+const TOKEN_BUCKET_CAPACITY = Number(process.env.AI_TOKEN_BUCKET_CAPACITY) || 10; // tokens
+const TOKEN_REFILL_PER_SEC = Number(process.env.AI_TOKEN_REFILL_PER_SEC) || (RATE_LIMIT_MAX / (RATE_LIMIT_WINDOW_MS / 1000));
+// Map key -> { tokens: number, lastRefill: epoch_ms }
+const tokenBuckets = new Map();
+
+function getBucketKey(req) {
+  // Prefer authenticated userId if present, otherwise IP address
+  const uid = (req.body && req.body.userId) || (req.userId);
+  if (uid) return `uid:${String(uid)}`;
+  // fallback to remote IP
+  return `ip:${req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown'}`;
+}
+
+function aiTokenBucketLimiter(req, res, next) {
+  try {
+    const key = getBucketKey(req);
+    const now = Date.now();
+    let bucket = tokenBuckets.get(key);
+    if (!bucket) {
+      bucket = { tokens: TOKEN_BUCKET_CAPACITY, lastRefill: now };
+      tokenBuckets.set(key, bucket);
+    }
+
+    // refill
+    const elapsedMs = Math.max(0, now - bucket.lastRefill);
+    const refillTokens = elapsedMs / 1000 * TOKEN_REFILL_PER_SEC;
+    if (refillTokens > 0) {
+      bucket.tokens = Math.min(TOKEN_BUCKET_CAPACITY, bucket.tokens + refillTokens);
+      bucket.lastRefill = now;
+    }
+
+    if (bucket.tokens >= 1) {
+      bucket.tokens -= 1;
+      return next();
+    }
+
+    // Not enough tokens: compute time until next token (sec)
+    const missing = 1 - bucket.tokens;
+    const retryAfterSec = Math.ceil(missing / TOKEN_REFILL_PER_SEC) || 1;
+    const keySample = key;
+    console.warn('[HF_ROUTE] token-bucket rate limit exceeded', { key: keySample, ip: req.ip, userId: req.body && req.body.userId });
     res.setHeader('Retry-After', String(retryAfterSec));
-    res.status(429).json({ error: `Rate limit exceeded. Try again in ${retryAfterSec} seconds.` });
+    return res.status(429).json({ error: `Rate limit exceeded. Try again in ${retryAfterSec} seconds.` });
+  } catch (e) {
+    console.error('[HF_ROUTE] rate limiter error', e && e.message ? e.message : e);
+    return res.status(500).json({ error: 'Rate limiter error' });
   }
-});
+}
 
 const REJECTION_MESSAGES = {
   en: "I only answer questions related to databases (SQL and database programming).",
@@ -125,6 +161,6 @@ async function handleDbQuery(req, res) {
   }
 }
 
-router.post('/dbquery', limiter, express.json(), handleDbQuery);
+router.post('/dbquery', aiTokenBucketLimiter, express.json(), handleDbQuery);
 router.handleDbQuery = handleDbQuery;
 module.exports = router;
