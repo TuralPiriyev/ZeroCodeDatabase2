@@ -30,10 +30,11 @@ function getBucket(key) {
 router.post('/dbquery', async (req, res) => {
   try {
     const upstreamUrl = 'https://zerocodedb.online/api/ai/dbquery';
-    const apiKey = (process.env.ZEROCODEDB_API_KEY || '').trim();
+  // Backwards-compatible environment variable: prefer HF_KEY, fall back to ZEROCODEDB_API_KEY
+  const API_KEY = (process.env.HF_KEY || process.env.ZEROCODEDB_API_KEY || '').trim();
 
-    // If no API key is configured, operate in mock mode and simulate upstream rate limits
-    if (!apiKey) {
+  // If no API key is configured, operate in mock mode and simulate upstream rate limits
+  if (!API_KEY) {
       // Use client IP or userId as key
       const key = (req.body && req.body.userId) ? `uid:${req.body.userId}` : `ip:${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`;
       const bucket = getBucket(key);
@@ -55,7 +56,7 @@ router.post('/dbquery', async (req, res) => {
     // Real upstream proxying when API key is present
     const upstream = await axios.post(upstreamUrl, req.body || {}, {
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${API_KEY}`,
         'Content-Type': 'application/json'
       },
       validateStatus: () => true,
