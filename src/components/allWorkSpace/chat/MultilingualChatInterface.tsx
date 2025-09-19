@@ -486,7 +486,8 @@ async function sendToAI(question: string, language: string, userId?: string, con
     return `${b}/${p}`.replace(/([^:])\/\/+/, '$1/');
   };
 
-  const url = joinUrl(apiBase, '/api/ai/dbquery');
+  // Use server-side proxy to avoid exposing third-party API keys to the client
+  const url = joinUrl(apiBase, '/api/proxy/dbquery');
 
   // Dev-only logging to help debug 404s; does not print secrets
   if ((typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development') || (typeof window !== 'undefined' && (window as any).__DEV__)) {
@@ -499,11 +500,23 @@ async function sendToAI(question: string, language: string, userId?: string, con
     } catch (e) {}
   }
 
-      const res = await fetch(url, {
+      // Use the request queue to reduce burst traffic; fetchWithBackoff handles retries for 5xx
+      const opts: RequestInit = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      });
+        // include a timeout so fetchWithBackoff can abort long requests
+        // note: we send timeout via a custom field consumed by fetchWithBackoff
+        // (not standard Fetch API) - it's read there when creating AbortController
+        // @ts-ignore
+        timeoutMs: 30000
+      };
+
+      // dynamic import to avoid loading queue in non-browser environments
+      const { enqueueRequest } = await import('../../../utils/aiQueue');
+      const queuedRes = await enqueueRequest(url, opts);
+
+      const res = queuedRes;
 
       if (res.status === 429) {
         const retryAfter = res.headers.get('Retry-After') || Math.ceil((60*1000)/1000).toString();

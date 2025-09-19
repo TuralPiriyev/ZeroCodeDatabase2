@@ -234,6 +234,15 @@ try {
 } catch (e) {
   console.warn('Could not mount AI router in server.cjs (deferred):', e && e.message ? e.message : e);
 }
+
+// Mount proxy router for third-party API forwarding (keeps API keys on server)
+try {
+  const proxyRouter = require('./server/proxy.js');
+  app.use('/api/proxy', proxyRouter);
+  console.log('Mounted proxy router at /api/proxy');
+} catch (e) {
+  console.warn('Could not mount proxy router:', e && e.message ? e.message : e);
+}
 // disable ETag globally (so browsers/proxies less likely to return 304 for API)
 app.disable('etag');
 
