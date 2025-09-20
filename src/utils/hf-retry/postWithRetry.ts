@@ -35,12 +35,16 @@ export async function postWithRetry(url:string, body:any, token:string|undefined
       }
 
       if (res.status === 429 || res.status === 503){
-        // honor Retry-After header if present
+        // honor Retry-After header if present — wait at least that many seconds
         const ra = res.headers.get('Retry-After');
-        let waitMs = ra ? (parseInt(ra) * 1000) : Math.min(baseDelay * (2 ** attempt), 30000);
-        // full jitter
-        waitMs = Math.random() * waitMs;
-        await sleep(waitMs + Math.random()*300);
+        if (ra) {
+          const waitMs = (parseInt(ra, 10) || 1) * 1000;
+          await sleep(waitMs);
+          continue;
+        }
+        // deterministic exponential backoff (no full jitter) so tests can rely on minimum delays
+        const waitMs = Math.min(baseDelay * (2 ** (attempt - 1)), 30000);
+        await sleep(waitMs);
         continue;
       }
 
