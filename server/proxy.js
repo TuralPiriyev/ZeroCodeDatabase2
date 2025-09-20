@@ -18,6 +18,16 @@ router.get('/health', (req, res) => {
   return res.json({ status: 'ok', proxy: true });
 });
 
+// Respond to preflight requests for this proxy (useful if frontend sends preflight)
+router.options('/*', (req, res) => {
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS, GET');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-Id, X-Correlation-Id');
+  res.setHeader('Access-Control-Max-Age', '600');
+  return res.sendStatus(204);
+});
+
 // Helper to generate or propagate request id
 function ensureRequestId(req) {
   return req.headers['x-request-id'] || req.headers['x-correlation-id'] || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.floor(Math.random()*100000)}`);
@@ -66,7 +76,13 @@ router.post('/*', async (req, res) => {
       headers['Authorization'] = `Bearer ${HF_TOKEN}`;
     }
 
-    console.log(`[PROXY] incoming ${req.method} ${req.originalUrl} -> upstream ${upstreamUrl}`);
+  // Add CORS headers to actual responses too (mirror origin or use configured FRONTEND_ORIGIN)
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-Id, X-Correlation-Id');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS, GET');
+
+  console.log(`[PROXY] incoming ${req.method} ${req.originalUrl} -> upstream ${upstreamUrl}`);
 
     const timeoutMs = Number(process.env.PROXY_UPSTREAM_TIMEOUT_MS || 120000);
 
@@ -99,6 +115,10 @@ router.post('/*', async (req, res) => {
     }
 
     console.log(`[PROXY] response ${requestId} ${resp.status} ${latency}ms preview="${bodyPreview.replace(/\n/g,' ')}"`);
+
+    if (resp.status === 404) {
+      console.warn(`[PROXY] upstream returned 404 for ${upstreamUrl} (requestId=${requestId})`);
+    }
 
     // Copy upstream headers to response (excluding hop-by-hop headers)
     const hopByHop = new Set(['transfer-encoding','connection','keep-alive','proxy-authenticate','proxy-authorization','te','trailers','upgrade','content-length']);
