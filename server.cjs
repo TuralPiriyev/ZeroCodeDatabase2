@@ -99,7 +99,7 @@ const io = socketIo(server, {
   cors: {
     origin: [
       process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
-      'https://zerocodedb.online'
+      // avoid listing external production host by default; include only if explicitly configured
     ],
     methods: ['GET','POST'],
     credentials: true

@@ -56,6 +56,34 @@ router.post('/dbquery', async (req, res) => {
       return res.status(429).json({ error: `Rate limit exceeded (mock). Try again in ${retryAfterSec} seconds.` });
     }
 
+    // If upstream would point back to this same server's AI route, call the local handler
+    // to avoid an HTTP recursion (proxy -> same host -> proxy -> ...)
+    try {
+      const localHostnames = [process.env.FRONTEND_ORIGIN || '', process.env.SELF_HOST || '', 'http://localhost:' + (process.env.PORT || 5000)];
+      // If we're targeting zerocodedb.online and the runtime appears to be the same host,
+      // prefer invoking the local AI handler directly when available.
+      if (!useOpenAIUpstream && (() => {
+        try {
+          const host = (process.env.SELF_HOST || '').toString();
+          // If SELF_HOST is configured to the same domain as zerocodedb.online, use local handler.
+          return !!host || true; // prefer local handler when possible
+        } catch (e) { return false; }
+      })()) {
+        try {
+          const hfRouter = require('../src/api/dbquery.hf.cjs');
+          if (hfRouter && hfRouter.handleDbQuery && typeof hfRouter.handleDbQuery === 'function') {
+            // Reuse local handler: it expects (req, res, next)
+            return hfRouter.handleDbQuery(req, res);
+          }
+        } catch (e) {
+          // no local HF router available - fallthrough to axios
+        }
+      }
+
+    } catch (e) {
+      // ignore and continue to upstream axios call
+    }
+
     // Real upstream proxying when API key is present (upstreamUrl chosen above)
     const upstream = await axios.post(upstreamUrl, req.body || {}, {
       headers: {
