@@ -32,29 +32,20 @@ router.post('/dbquery', async (req, res) => {
   // Backwards-compatible environment variable: prefer HF_KEY, fall back to ZEROCODEDB_API_KEY, then OPENAI_API_KEY
   const API_KEY = (process.env.HF_KEY || process.env.ZEROCODEDB_API_KEY || process.env.OPENAI_API_KEY || '').trim();
 
-  // Decide upstream target: if only OPENAI_API_KEY is present (and HF/ZC not set), target OpenAI
+  // Decide upstream target
   const useOpenAIUpstream = !!(process.env.OPENAI_API_KEY) && !process.env.HF_KEY && !process.env.ZEROCODEDB_API_KEY;
-  const upstreamUrl = useOpenAIUpstream ? 'https://api.openai.com/v1/chat/completions' : 'https://zerocodedb.online/api/ai/dbquery';
+  // Prefer an explicit upstream URL for HF if provided. Otherwise use HF inference base + optional HF_MODEL env
+  const HF_UPSTREAM_BASE = (process.env.HF_UPSTREAM_BASE || 'https://api-inference.huggingface.co').replace(/\/+$/, '');
+  const hfModel = (process.env.HF_MODEL || '').replace(/^\/+|\/+$/g, '');
+  const hfDefaultUpstream = hfModel ? `${HF_UPSTREAM_BASE}/models/${hfModel}` : HF_UPSTREAM_BASE + '/models';
+  const upstreamUrl = useOpenAIUpstream ? 'https://api.openai.com/v1/chat/completions' : (process.env.HF_UPSTREAM_URL || hfDefaultUpstream);
 
-  // If no API key is configured, operate in mock mode and simulate upstream rate limits
+  // If no API key is configured, reject early with an explicit error.
+  // Production deployments should set HF_KEY or HF_TOKEN (or OPENAI_API_KEY when using OpenAI upstream).
   if (!API_KEY) {
-      // Use client IP or userId as key
-      const key = (req.body && req.body.userId) ? `uid:${req.body.userId}` : `ip:${req.ip || req.headers['x-forwarded-for'] || 'unknown'}`;
-      const bucket = getBucket(key);
-      if (bucket.tokens >= 1) {
-        bucket.tokens -= 1;
-        // Simulate some processing delay
-        await new Promise(r => setTimeout(r, 120 + Math.floor(Math.random() * 200)));
-        // Return a mock structured response similar to upstream
-        res.setHeader('X-Mock-Mode', 'true');
-        return res.json({ answer: { sql: '', params: {}, explanation: 'Mock AI response (no upstream API key configured).', language: req.body && req.body.language || 'en' } });
-      }
-      // Not enough tokens: compute retry-after seconds
-      const missing = 1 - bucket.tokens;
-      const retryAfterSec = Math.ceil(missing / TOKEN_REFILL_PER_SEC) || 1;
-      res.setHeader('Retry-After', String(retryAfterSec));
-      return res.status(429).json({ error: `Rate limit exceeded (mock). Try again in ${retryAfterSec} seconds.` });
-    }
+    console.warn('[PROXY] no upstream API key configured; rejecting request');
+    return res.status(502).json({ error: 'No upstream API key configured. Set HF_KEY or HF_TOKEN (or OPENAI_API_KEY).' });
+  }
 
     // If upstream would point back to this same server's AI route, call the local handler
     // to avoid an HTTP recursion (proxy -> same host -> proxy -> ...)
@@ -85,14 +76,73 @@ router.post('/dbquery', async (req, res) => {
     }
 
     // Real upstream proxying when API key is present (upstreamUrl chosen above)
-    const upstream = await axios.post(upstreamUrl, req.body || {}, {
-      headers: {
-        'Authorization': `Bearer ${API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      validateStatus: () => true,
-      timeout: 30000
-    });
+    console.log('[PROXY] forwarding to upstream:', upstreamUrl, 'useOpenAI:', useOpenAIUpstream ? 'yes' : 'no');
+
+    // Generate or propagate request id for tracing
+    const crypto = require('crypto');
+    const incomingReqId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
+    const requestId = incomingReqId || (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.floor(Math.random()*100000)}`);
+
+    const maxAttempts = Number(process.env.PROXY_UPSTREAM_MAX_ATTEMPTS || 3);
+    const baseDelayMs = Number(process.env.PROXY_UPSTREAM_BASE_DELAY_MS || 500);
+    let lastErr = null;
+    let upstreamResponse = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const headers = {
+          'Authorization': `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json',
+          'X-Request-Id': requestId,
+          'X-Correlation-Id': requestId
+        };
+
+        // forward some client headers for context
+        if (req.headers['user-agent']) headers['X-Forwarded-User-Agent'] = req.headers['user-agent'];
+
+        const timeoutMs = Number(process.env.PROXY_UPSTREAM_TIMEOUT_MS || 120000);
+        const resp = await axios.post(upstreamUrl, req.body || {}, {
+          headers,
+          validateStatus: () => true,
+          timeout: timeoutMs
+        });
+
+        upstreamResponse = resp;
+
+        // If upstream indicates Retry-After and status is 429/503, honor it
+        if (resp.status === 429 || resp.status === 503) {
+          const ra = resp.headers && (resp.headers['retry-after'] || resp.headers['Retry-After']);
+          if (ra) {
+            const waitMs = (parseInt(ra, 10) || 1) * 1000;
+            console.warn(`[PROXY] upstream returned ${resp.status} with Retry-After=${ra}s. Waiting ${waitMs}ms before retry (attempt ${attempt}).`);
+            await new Promise(r => setTimeout(r, waitMs));
+            lastErr = new Error(`Upstream ${resp.status}`);
+            continue;
+          }
+          // otherwise fall through to exponential backoff below
+          lastErr = new Error(`Upstream ${resp.status}`);
+        }
+
+        // successful or non-retryable status — break and forward
+        break;
+      } catch (err) {
+        // network/timeout error — treat as transient and retry
+        lastErr = err;
+        const backoff = Math.min(baseDelayMs * (2 ** (attempt - 1)), 30000);
+        const jitter = Math.floor(Math.random() * 300);
+        const sleepMs = backoff + jitter;
+        console.warn(`[PROXY] upstream request error (attempt ${attempt}/${maxAttempts}): ${err && err.message}. Retrying in ${sleepMs}ms`);
+        await new Promise(r => setTimeout(r, sleepMs));
+        continue;
+      }
+    }
+
+    if (!upstreamResponse && lastErr) {
+      console.error('[PROXY] all upstream attempts failed', lastErr && lastErr.message ? lastErr.message : lastErr);
+      return res.status(502).json({ error: 'Upstream unavailable after retries', details: String(lastErr && lastErr.message ? lastErr.message : lastErr) });
+    }
+
+    const upstream = upstreamResponse;
 
     // Forward rate-limit related headers so client can react (Retry-After, X-RateLimit-*)
     try {
