@@ -7,15 +7,19 @@ const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const HuggingFaceProvider = require('../aiProviders/HuggingFaceProvider.cjs');
+const MysterProvider = require('../aiProviders/MysterProvider.cjs');
 const AIProvider = require('../aiProviders/AIProvider.cjs');
 
 require('dotenv').config();
 
+const MYSTER_KEY = (process.env.MYSTER_API_KEY || '').trim();
+const MYSTER_MODEL = process.env.MYSTER_MODEL || process.env.HF_MODEL || 'gpt2';
 const HF_KEY = (process.env.HF_KEY || '').trim();
 const HF_MODEL = process.env.HF_MODEL || 'gpt2';
 
 // 30s timeout, 60s cache
-const hf = new HuggingFaceProvider({ apiKey: HF_KEY, model: HF_MODEL, timeoutMs: 30000, cacheTtl: 60*1000 });
+const myster = MYSTER_KEY ? new MysterProvider({ apiKey: MYSTER_KEY, model: MYSTER_MODEL, timeoutMs: 30000, cacheTtl: 60*1000 }) : null;
+const hf = HF_KEY ? new HuggingFaceProvider({ apiKey: HF_KEY, model: HF_MODEL, timeoutMs: 30000, cacheTtl: 60*1000 }) : null;
 
 const RATE_LIMIT_WINDOW_MS = Number(process.env.AI_RATE_LIMIT_WINDOW_MS) || 60*1000;
 const RATE_LIMIT_MAX = Number(process.env.AI_RATE_LIMIT_MAX) || 30;
@@ -87,7 +91,7 @@ function looksDestructive(sql) {
   return /\b(drop|delete|truncate|alter|create|update|insert|replace)\b/.test(s);
 }
 
-router.get('/health', (req, res) => res.json({ status: 'ok', provider: HF_KEY ? 'huggingface' : 'none' }));
+router.get('/health', (req, res) => res.json({ status: 'ok', provider: MYSTER_KEY ? 'myster' : (HF_KEY ? 'huggingface' : 'none') }));
 
 async function handleDbQuery(req, res) {
   try {
@@ -112,8 +116,8 @@ async function handleDbQuery(req, res) {
 
     const user = `Language: ${language}\nSchema: ${schema ? JSON.stringify(schema) : 'none'}\nQuestion: ${question}\nReturn JSON only.`;
 
-    // Prefer HF provider if configured
-    const provider = HF_KEY ? hf : null;
+    // Prefer Myster provider if configured, otherwise HF
+    const provider = myster || hf;
     if (!provider) {
       return res.status(503).json({ error: SERVICE_UNAVAILABLE[language] || SERVICE_UNAVAILABLE.en });
     }

@@ -5,8 +5,9 @@ ENV vars required:
 - PORT (optional, defaults to 5000)
 
 Additional env vars (AI proxy):
-- HF_KEY (preferred) - your Hugging Face API key. Example in `.env.example`.
-- ZEROCODEDB_API_KEY (deprecated alias) - still recognized for backward compatibility.
+- MYSTER_API_KEY - your MysterAI API key. Example in `.env.example`.
+- MYSTER_API_BASE_URL - optional base URL for MysterAI (defaults to https://api.myster.example).
+- HF_KEY (deprecated) - legacy Hugging Face key kept for backward compatibility.
 
 Local proxy & debug
 -------------------
@@ -15,10 +16,10 @@ This project serves a small runtime helper and a server-side proxy to avoid expo
 
 Run locally:
 
-1. Set HF token (server only):
+1. Set Myster key (server only):
 
 ```powershell
-$env:HF_TOKEN = 'sk_xxx'
+$env:MYSTER_API_KEY = 'sk_xxx'
 node server.cjs
 ```
 
@@ -31,7 +32,7 @@ bash tools/diag/proxy-test.sh
 ```
 
 Notes:
-- Do NOT put `HF_TOKEN` in client-side code. The proxy attaches Authorization server-side.
+- Do NOT put `MYSTER_API_KEY` (or HF_TOKEN) in client-side code. The proxy attaches Authorization server-side.
 - Consider adding rate-limiting and circuit-breaker for production.
 
 

@@ -8,10 +8,10 @@ const router = express.Router();
 router.use(express.json({ limit: '5mb' }));
 
 // Config from env
-const HF_TOKEN = (process.env.HF_TOKEN || process.env.HF_KEY || '').trim();
-const HF_OWNER = (process.env.HF_OWNER || '').trim();
-const HF_MODEL = (process.env.HF_MODEL || '').trim();
-const PROXY_UPSTREAM = (process.env.PROXY_UPSTREAM || 'https://api-inference.huggingface.co').replace(/\/+$/, '');
+const MYSTER_KEY = (process.env.MYSTER_API_KEY || '').trim();
+const MYSTER_OWNER = (process.env.MYSTER_OWNER || process.env.HF_OWNER || '').trim();
+const MYSTER_MODEL = (process.env.MYSTER_MODEL || process.env.HF_MODEL || '').trim();
+const PROXY_UPSTREAM = (process.env.MYSTER_API_BASE_URL || process.env.PROXY_UPSTREAM || 'https://api.myster.example').replace(/\/+$/, '');
 
 // Health check
 router.get('/health', (req, res) => {
@@ -46,16 +46,16 @@ router.post('/*', async (req, res) => {
 
     let upstreamUrl;
     if (suffix === '' || suffix === '/' || suffix === '/dbquery') {
-      // Map /api/proxy/dbquery -> /models/{OWNER}/{MODEL}
-      if (!HF_OWNER || !HF_MODEL) {
-        const msg = 'HF_OWNER or HF_MODEL not configured in environment';
+      // Map /api/proxy/dbquery -> /models/{OWNER}/{MODEL} on Myster
+      if (!MYSTER_OWNER || !MYSTER_MODEL) {
+        const msg = 'MYSTER_OWNER or MYSTER_MODEL not configured in environment';
         console.error('[PROXY] config error:', msg);
         return res.status(500).json({ error: 'proxy_misconfigured', details: msg });
       }
       // Preserve any query string from originalUrl
       const queryIndex = (req.originalUrl || '').indexOf('?');
       const query = queryIndex >= 0 ? (req.originalUrl || '').slice(queryIndex) : '';
-      upstreamUrl = `${PROXY_UPSTREAM}/models/${encodeURIComponent(HF_OWNER)}/${encodeURIComponent(HF_MODEL)}${query}`;
+      upstreamUrl = `${PROXY_UPSTREAM}/models/${encodeURIComponent(MYSTER_OWNER)}/${encodeURIComponent(MYSTER_MODEL)}${query}`;
     } else {
       // For other paths, forward to PROXY_UPSTREAM + suffix
       // Ensure we do not duplicate slashes
@@ -72,8 +72,8 @@ router.post('/*', async (req, res) => {
     // Forward user-agent as context
     if (req.headers['user-agent']) headers['X-Forwarded-User-Agent'] = req.headers['user-agent'];
 
-    if (HF_TOKEN) {
-      headers['Authorization'] = `Bearer ${HF_TOKEN}`;
+    if (MYSTER_KEY) {
+      headers['Authorization'] = `Bearer ${MYSTER_KEY}`;
     }
 
   // Add CORS headers to actual responses too (mirror origin or use configured FRONTEND_ORIGIN)

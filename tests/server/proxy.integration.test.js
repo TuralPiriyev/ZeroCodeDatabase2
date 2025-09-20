@@ -16,8 +16,8 @@ describe('server proxy integration', () => {
   });
 
   test('forwards request and attaches Authorization from env', async () => {
-    process.env.HF_TOKEN = 'test-token-123';
-    const upstream = nock('https://api-inference.huggingface.co')
+    process.env.MYSTER_API_KEY = 'test-token-123';
+    const upstream = nock('https://api.myster.example')
       .post('/models/x/y')
       .reply(function(uri, body) {
         // assert Authorization header was set
@@ -37,8 +37,8 @@ describe('server proxy integration', () => {
   });
 
   test('forwards 503 upstream status', async () => {
-    process.env.HF_TOKEN = 'test-token-123';
-    nock('https://api-inference.huggingface.co')
+    process.env.MYSTER_API_KEY = 'test-token-123';
+    nock('https://api.myster.example')
       .post('/models/x/y')
       .reply(503, { error: 'service unavailable' });
 

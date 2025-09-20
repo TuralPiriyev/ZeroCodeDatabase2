@@ -89,6 +89,8 @@ if (process.env.FORCE_AI_DEBUG === 'true') {
 require('dotenv').config();
 const HF_KEY = process.env.HF_KEY;
 const HF_MODEL = process.env.HF_MODEL;
+const MYSTER_API_KEY = process.env.MYSTER_API_KEY;
+const MYSTER_API_BASE_URL = process.env.MYSTER_API_BASE_URL;
 
 
 
