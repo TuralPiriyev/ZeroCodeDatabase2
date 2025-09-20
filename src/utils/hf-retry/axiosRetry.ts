@@ -1,6 +1,6 @@
-import axios, { AxiosInstance } from 'axios';
+import type { AxiosInstance } from 'axios';
 
-export function attachRetryInterceptor(axiosInstance:AxiosInstance, opts:{ maxAttempts?:number, baseDelayMs?:number } = {}){
+export function attachRetryInterceptor(axiosInstance: AxiosInstance, opts:{ maxAttempts?:number, baseDelayMs?:number } = {}){
   const maxAttempts = opts.maxAttempts || 5;
   const baseDelay = opts.baseDelayMs || 500;
 

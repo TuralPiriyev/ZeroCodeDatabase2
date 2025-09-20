@@ -1,12 +1,18 @@
-import { postWithRetry } from '../../../src/utils/hf-retry/postWithRetry';
-import mockApp from '../../../tools/diag-hf/mock_hf_server';
+import { postWithRetry } from '../../src/utils/hf-retry/postWithRetry';
+import mockApp from '../../tools/diag-hf/mock_hf_server';
 import http from 'http';
 
 let server: http.Server;
-beforeAll((done) => {
-  server = mockApp.listen(8088, done);
+beforeAll(async () => {
+  await new Promise<void>((resolve) => {
+    server = mockApp.listen(8088, () => resolve());
+  });
 });
-afterAll((done) => server.close(done));
+afterAll(async () => {
+  if (server && server.close) {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
 
 test('succeeds on 200', async () => {
   const res = await postWithRetry('http://localhost:8088/models/x/x?mode=ok', { inputs: 'x' }, undefined, { maxAttempts: 3 });
