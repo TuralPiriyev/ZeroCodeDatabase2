@@ -40,6 +40,47 @@
         }
       })();
     </script>
+    <script>
+      // Runtime safeguard: if any compiled code still tries to call the hard-coded
+      // zerocodedb.online host, rewrite those requests to the local proxy to avoid
+      // exposing client-side API keys or failing due to cross-origin.
+      (function(){
+        try {
+          const BAD_HOST = 'https://zerocodedb.online';
+          const PROXY_PATH = '/api/proxy';
+
+          // Patch fetch
+          if (window.fetch) {
+            const origFetch = window.fetch.bind(window);
+            window.fetch = function(input, init){
+              try {
+                let url = (typeof input === 'string') ? input : input && input.url ? input.url : input;
+                if (typeof url === 'string' && url.startsWith(BAD_HOST)) {
+                  // Map 'https://zerocodedb.online/api/proxy/dbquery' -> '/api/proxy/dbquery'
+                  const newUrl = url.replace(BAD_HOST, window.location.origin);
+                  if (typeof input === 'string') input = newUrl;
+                  else if (input && input.url) input = new Request(newUrl, input);
+                }
+              } catch (e) { /* ignore */ }
+              return origFetch(input, init);
+            };
+          }
+
+          // Patch XMLHttpRequest.open
+          const XOpen = window.XMLHttpRequest && window.XMLHttpRequest.prototype && window.XMLHttpRequest.prototype.open;
+          if (XOpen) {
+            window.XMLHttpRequest.prototype.open = function(method, url){
+              try {
+                if (typeof url === 'string' && url.startsWith(BAD_HOST)) {
+                  url = url.replace(BAD_HOST, window.location.origin);
+                }
+              } catch(e){}
+              return XOpen.apply(this, [method, url].concat(Array.prototype.slice.call(arguments,2)));
+            };
+          }
+        } catch (e) { console.error('Runtime proxy patch failed', e); }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
