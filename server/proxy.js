@@ -45,20 +45,27 @@ router.post('/*', async (req, res) => {
     // suffix looks like '/dbquery' or '/models/x/y?foo=1' etc.
 
     let upstreamUrl;
+    // Special-case: support legacy frontend calls to /api/proxy/dbquery -> route to Mistral chat completions
+    // This allows the frontend to remain unchanged while we forward to Mistral.
+    const MISTRAL_KEY = (process.env.MISTRAL_API_KEY || '').trim();
+    const MISTRAL_MODEL = (process.env.MISTRAL_MODEL || 'mistral-small-latest').trim();
     if (suffix === '' || suffix === '/' || suffix === '/dbquery') {
-      // Map /api/proxy/dbquery -> /models/{OWNER}/{MODEL} on Myster
-      if (!MYSTER_OWNER || !MYSTER_MODEL) {
-        const msg = 'MYSTER_OWNER or MYSTER_MODEL not configured in environment';
-        console.error('[PROXY] config error:', msg);
-        return res.status(500).json({ error: 'proxy_misconfigured', details: msg });
+      // If MISTRAL_API_KEY is present, forward to Mistral chat completion endpoint
+      if (MISTRAL_KEY) {
+        upstreamUrl = 'https://api.mistral.ai/v1/chat/completions';
+      } else {
+        // Fallback to existing Myster mapping
+        if (!MYSTER_OWNER || !MYSTER_MODEL) {
+          const msg = 'MYSTER_OWNER or MYSTER_MODEL not configured in environment';
+          console.error('[PROXY] config error:', msg);
+          return res.status(500).json({ error: 'proxy_misconfigured', details: msg });
+        }
+        const queryIndex = (req.originalUrl || '').indexOf('?');
+        const query = queryIndex >= 0 ? (req.originalUrl || '').slice(queryIndex) : '';
+        upstreamUrl = `${PROXY_UPSTREAM}/models/${encodeURIComponent(MYSTER_OWNER)}/${encodeURIComponent(MYSTER_MODEL)}${query}`;
       }
-      // Preserve any query string from originalUrl
-      const queryIndex = (req.originalUrl || '').indexOf('?');
-      const query = queryIndex >= 0 ? (req.originalUrl || '').slice(queryIndex) : '';
-      upstreamUrl = `${PROXY_UPSTREAM}/models/${encodeURIComponent(MYSTER_OWNER)}/${encodeURIComponent(MYSTER_MODEL)}${query}`;
     } else {
       // For other paths, forward to PROXY_UPSTREAM + suffix
-      // Ensure we do not duplicate slashes
       upstreamUrl = `${PROXY_UPSTREAM}${suffix}`;
     }
 
@@ -71,6 +78,39 @@ router.post('/*', async (req, res) => {
 
     // Forward user-agent as context
     if (req.headers['user-agent']) headers['X-Forwarded-User-Agent'] = req.headers['user-agent'];
+
+    // Prefer Mistral key for /dbquery if present, otherwise use Myster key
+    if (suffix === '/dbquery' || suffix === '' || suffix === '/') {
+      const MISTRAL_KEY_ENV = (process.env.MISTRAL_API_KEY || '').trim();
+      if (MISTRAL_KEY_ENV) {
+        headers['Authorization'] = `Bearer ${MISTRAL_KEY_ENV}`;
+        // If calling Mistral, ensure model param
+        if (upstreamUrl && upstreamUrl.includes('mistral.ai')) {
+          // Build body specifically for Mistral chat completions
+          const body = req.body || {};
+          // Expecting frontend to send { messages: [...] } per requirement
+          const messages = body.messages || body.inputs || [];
+          const payload = {
+            model: process.env.MISTRAL_MODEL || 'mistral-small-latest',
+            messages: messages,
+          };
+
+          try {
+            const timeoutMs = Number(process.env.PROXY_UPSTREAM_TIMEOUT_MS || 120000);
+            const resp = await axios.post(upstreamUrl, payload, { headers, timeout: timeoutMs, validateStatus: () => true });
+            const latency = Date.now() - start;
+            console.log(`[PROXY][MISTRAL] response ${requestId} ${resp.status} ${latency}ms`);
+            // Mirror status and JSON body
+            res.status(resp.status).json(resp.data);
+            return;
+          } catch (e) {
+            const latency = Date.now() - start;
+            console.error('[PROXY][MISTRAL] error forwarding', e && e.message ? e.message : e, 'latency', latency);
+            return res.status(500).json({ error: 'mistral_upstream_error', details: e && e.message ? e.message : String(e) });
+          }
+        }
+      }
+    }
 
     if (MYSTER_KEY) {
       headers['Authorization'] = `Bearer ${MYSTER_KEY}`;
