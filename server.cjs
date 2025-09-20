@@ -158,7 +158,92 @@ app.get('/runtime-config.js', (req, res) => {
     PAYPAL_PLAN_ULTIMATE_ID: process.env.PAYPAL_PLAN_ULTIMATE_ID || process.env.VITE_PAYPAL_PLAN_ULTIMATE_ID || process.env.REACT_APP_PAYPAL_PLAN_ULTIMATE_ID || ''
   };
   res.setHeader('Content-Type', 'application/javascript');
-  res.send(`window.__APP_ENV__ = ${JSON.stringify(cfg)};`);
+  // Provide runtime config and a small helper to rewrite bad upstream URLs to local proxy
+  const js = [];
+  js.push(`window.__APP_ENV__ = ${JSON.stringify(cfg)};`);
+  js.push(`(function(){
+    // client-side proxy helpers
+    const BAD_HOST = (function(){ try { return String(process && process.env && process.env.BAD_HOST) || 'https://zerocodedb.online'; } catch(e){ return 'https://zerocodedb.online'; } })();
+    const PROXY_PREFIX = '/api/proxy';
+
+    function buildProxyUrl(original) {
+      try {
+        if (!original) return original;
+        if (original.startsWith('/')) return original;
+        const u = new URL(original, window.location.origin);
+        if (u.origin === BAD_HOST) {
+          // preserve path + query
+          return PROXY_PREFIX + u.pathname + u.search;
+        }
+        return original;
+      } catch (e) {
+        console.debug('buildProxyUrl error', e && e.message ? e.message : e);
+        return original;
+      }
+    }
+
+    // Small helper: retry fetch on 429/503 with exponential backoff and jitter
+    async function fetchWithRetries(input, init, attempts = 3, baseDelay = 500) {
+      let lastErr = null;
+      for (let i=1;i<=attempts;i++) {
+        try {
+          const r = await window._origFetch(input, init);
+          if (r.status === 429 || r.status === 503) {
+            const ra = r.headers.get('Retry-After');
+            const wait = ra ? (parseInt(ra,10)||1)*1000 : Math.min(baseDelay * 2**(i-1), 30000);
+            const jitter = Math.floor(Math.random()*300);
+            await new Promise(r => setTimeout(r, wait + jitter));
+            lastErr = new Error('Upstream ' + r.status);
+            continue;
+          }
+          return r;
+        } catch (e) {
+          lastErr = e;
+          const wait = Math.min(baseDelay * 2**(i-1), 30000) + Math.floor(Math.random()*300);
+          await new Promise(r => setTimeout(r, wait));
+          continue;
+        }
+      }
+      throw lastErr;
+    }
+
+    try {
+      if (window.fetch) {
+        window._origFetch = window.fetch.bind(window);
+        window.fetch = function(input, init){
+          try {
+            let url = (typeof input === 'string') ? input : (input && input.url) ? input.url : input;
+            const newUrl = buildProxyUrl(url);
+            if (newUrl !== url) {
+              console.debug('[runtime-proxy] rewriting', url, '->', newUrl);
+            }
+            if (typeof input === 'string') input = newUrl;
+            else if (input && input.url) input = new Request(newUrl, input);
+          } catch(e) { console.debug('runtime-proxy fetch rewrite failed', e && e.message ? e.message : e); }
+          // Use fetchWithRetries for transient upstream errors
+          return fetchWithRetries(input, init, Number(window.__APP_ENV__ && window.__APP_ENV__.PROXY_RETRY_ATTEMPTS) || 3);
+        };
+      }
+
+      const XOpen = window.XMLHttpRequest && window.XMLHttpRequest.prototype && window.XMLHttpRequest.prototype.open;
+      if (XOpen) {
+        window.XMLHttpRequest.prototype.open = function(method, url){
+          try {
+            if (typeof url === 'string') {
+              const newUrl = buildProxyUrl(url);
+              if (newUrl !== url) {
+                console.debug('[runtime-proxy XHR] rewriting', url, '->', newUrl);
+                url = newUrl;
+              }
+            }
+          } catch(e) { console.debug('runtime-proxy xhr rewrite failed', e && e.message ? e.message : e); }
+          return XOpen.apply(this, [method, url].concat(Array.prototype.slice.call(arguments,2)));
+        };
+      }
+    } catch (e) { console.debug('runtime-proxy init failed', e && e.message ? e.message : e); }
+  })();`);
+
+  res.send(js.join('\n'));
 });
 
 // Dev-only extra logger and route enumeration

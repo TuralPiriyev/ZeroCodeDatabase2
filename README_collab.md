@@ -8,6 +8,33 @@ Additional env vars (AI proxy):
 - HF_KEY (preferred) - your Hugging Face API key. Example in `.env.example`.
 - ZEROCODEDB_API_KEY (deprecated alias) - still recognized for backward compatibility.
 
+Local proxy & debug
+-------------------
+
+This project serves a small runtime helper and a server-side proxy to avoid exposing HF/OpenAI tokens in the browser.
+
+Run locally:
+
+1. Set HF token (server only):
+
+```powershell
+$env:HF_TOKEN = 'sk_xxx'
+node server.cjs
+```
+
+2. Test the proxy (diagnostic script):
+
+On Windows PowerShell:
+
+```powershell
+bash tools/diag/proxy-test.sh
+```
+
+Notes:
+- Do NOT put `HF_TOKEN` in client-side code. The proxy attaches Authorization server-side.
+- Consider adding rate-limiting and circuit-breaker for production.
+
+
 Run server:
 
 ```powershell

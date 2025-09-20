@@ -9,7 +9,10 @@
     "dev:server": "nodemon server.cjs",
     "build": "vite build",
     "start": "node server.cjs",
-    "preview": "vite preview"
+    "start:server": "node server.cjs",
+    "preview": "vite preview",
+    "test": "jest --runInBand",
+    "test:server": "jest tests/server --runInBand"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
