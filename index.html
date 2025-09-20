@@ -57,7 +57,9 @@
                 let url = (typeof input === 'string') ? input : input && input.url ? input.url : input;
                 if (typeof url === 'string' && url.startsWith(BAD_HOST)) {
                   // Map 'https://zerocodedb.online/api/proxy/dbquery' -> '/api/proxy/dbquery'
-                  const newUrl = url.replace(BAD_HOST, window.location.origin);
+                  // Use a relative path (remove the host) so the request goes to the current origin's proxy
+                  // even when the page was loaded from zerocodedb.online or when window.location.origin === BAD_HOST.
+                  const newUrl = url.replace(BAD_HOST, '');
                   if (typeof input === 'string') input = newUrl;
                   else if (input && input.url) input = new Request(newUrl, input);
                 }
@@ -72,7 +74,8 @@
             window.XMLHttpRequest.prototype.open = function(method, url){
               try {
                 if (typeof url === 'string' && url.startsWith(BAD_HOST)) {
-                  url = url.replace(BAD_HOST, window.location.origin);
+                  // Remove the bad host so URL becomes relative (e.g. '/api/proxy/dbquery')
+                  url = url.replace(BAD_HOST, '');
                 }
               } catch(e){}
               return XOpen.apply(this, [method, url].concat(Array.prototype.slice.call(arguments,2)));

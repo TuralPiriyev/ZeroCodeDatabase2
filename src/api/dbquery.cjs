@@ -51,7 +51,8 @@ function escapeRegExp(str) {
 
 async function callOpenAIChat(messages, max_tokens = 800) {
   // Route model calls through the server proxy to centralize API keys (HF_KEY/OpenAI)
-  const proxyUrl = `http://localhost:${process.env.PORT || 5000}/api/proxy/dbquery`;
+  // Use a relative path so deployments don't bake in localhost or external hostnames.
+  const proxyUrl = '/api/proxy/dbquery';
   const body = { messages, model: MODEL, max_tokens };
   const res = await fetch(proxyUrl, {
     method: 'POST',
