@@ -102,8 +102,19 @@ async function callMysterWrapped(messages, max_tokens = 800) {
 
   // Myster util expects a payload object: { path, method, body, timeoutMs }
   // body shape: adapt messages into provider-expected format. We'll send { inputs: messages, parameters: {...} }
-  const path = `/models/${encodeURIComponent(owner)}/${encodeURIComponent(model)}/chat`;// chat path example
-  const body = { inputs: messages, parameters: { max_tokens: Number(max_tokens || 800) } };
+  // Some upstreams (notably Mistral cloud at api.mistral.ai) expect a different
+  // chat completions endpoint and payload shape. Detect that case and adapt.
+  const baseUrl = (process.env.MYSTER_API_BASE_URL || '').trim();
+  let path;
+  let body;
+  if (baseUrl && baseUrl.includes('mistral.ai')) {
+    // Use Mistral-style chat completions endpoint
+    path = baseUrl.replace(/\/+$/, '') + '/chat/completions';
+    body = { model: model, messages: messages, parameters: { max_tokens: Number(max_tokens || 800) } };
+  } else {
+    path = `/models/${encodeURIComponent(owner)}/${encodeURIComponent(model)}/chat`;// chat path example
+    body = { inputs: messages, parameters: { max_tokens: Number(max_tokens || 800) } };
+  }
 
   // call the util which handles base URL, auth, retries, timeout, etc.
   const resp = await callMysterAPI({ path, method: 'POST', body, timeoutMs: Number(process.env.AI_HANDLER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS) });
