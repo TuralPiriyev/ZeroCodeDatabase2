@@ -130,13 +130,55 @@ router.post('/*', async (req, res) => {
 
     const timeoutMs = Number(process.env.PROXY_UPSTREAM_TIMEOUT_MS || 120000);
 
-    // Forward POST body to upstream
-    const resp = await axios.post(upstreamUrl, req.body || {}, {
-      headers,
-      timeout: timeoutMs,
-      validateStatus: () => true,
-      responseType: 'arraybuffer'
-    });
+    // Helper: attempt POST with retries for retryable upstream statuses (429, >=500)
+    async function postWithRetries(url, body, opts = {}) {
+      const maxRetries = Number(opts.maxRetries || process.env.PROXY_UPSTREAM_MAX_RETRIES || 3);
+      const baseDelay = Number(opts.baseDelayMs || 300);
+      let attempt = 0;
+      let lastErr = null;
+
+      while (attempt <= maxRetries) {
+        attempt++;
+        try {
+          const r = await axios.post(url, body || {}, {
+            headers: opts.headers || {},
+            timeout: opts.timeout || timeoutMs,
+            validateStatus: () => true,
+            responseType: 'arraybuffer'
+          });
+
+          // If upstream returned 429 or 5xx -> retryable
+          if (r.status === 429 || (r.status >= 500 && r.status !== 501)) {
+            lastErr = r;
+            if (attempt > maxRetries) return r; // return last response
+            // Respect Retry-After header if present
+            const ra = r.headers && r.headers['retry-after'];
+            let wait = baseDelay * Math.pow(2, attempt - 1);
+            if (ra) {
+              const n = Number(ra);
+              if (!isNaN(n)) wait = Math.max(wait, n * 1000);
+            }
+            await new Promise(res => setTimeout(res, Math.min(wait, 60000)));
+            continue;
+          }
+
+          // Non-retryable or success -> return
+          return r;
+        } catch (e) {
+          lastErr = e;
+          // network errors/timeouts are retryable
+          if (attempt > maxRetries) throw e;
+          const wait = Math.min(baseDelay * Math.pow(2, attempt - 1), 60000);
+          await new Promise(res => setTimeout(res, wait));
+        }
+      }
+      // if exhausted, throw last error
+      if (lastErr && lastErr instanceof Error) throw lastErr;
+      return lastErr;
+    }
+
+    // Forward POST body to upstream with retries
+    const resp = await postWithRetries(upstreamUrl, req.body || {}, { headers, timeout: timeoutMs });
 
     const latency = Date.now() - start;
 
@@ -158,16 +200,16 @@ router.post('/*', async (req, res) => {
       bodyPreview = '[unreadable]';
     }
 
-    console.log(`[PROXY] response ${requestId} ${resp.status} ${latency}ms preview="${bodyPreview.replace(/\n/g,' ')}"`);
+  console.log(`[PROXY] response ${requestId} ${resp && resp.status} ${latency}ms preview="${String(bodyPreview).replace(/\n/g,' ')}"`);
 
-    if (resp.status === 404) {
+    if (resp && resp.status === 404) {
       console.warn(`[PROXY] upstream returned 404 for ${upstreamUrl} (requestId=${requestId})`);
     }
 
     // Copy upstream headers to response (excluding hop-by-hop headers)
     const hopByHop = new Set(['transfer-encoding','connection','keep-alive','proxy-authenticate','proxy-authorization','te','trailers','upgrade','content-length']);
     try {
-      Object.keys(resp.headers || {}).forEach((k) => {
+      Object.keys((resp && resp.headers) || {}).forEach((k) => {
         const lk = k.toLowerCase();
         if (!hopByHop.has(lk)) {
           res.setHeader(k, resp.headers[k]);
@@ -178,30 +220,41 @@ router.post('/*', async (req, res) => {
     }
 
     // Send status and body as-is
-    res.status(resp.status);
+  // If resp is an Error thrown by axios or network, map to 502
+  const statusToSend = (resp && resp.status) || 502;
+  res.status(statusToSend);
     // If responseType was arraybuffer, resp.data is a Buffer
     if (Buffer.isBuffer(resp.data)) {
       return res.send(resp.data);
     }
     // Attempt to parse JSON if content-type says so
     const contentType = (resp.headers && resp.headers['content-type']) || '';
-    if (contentType.includes('application/json')) {
+    if (resp && resp.data) {
       try {
-        const parsed = JSON.parse(Buffer.from(resp.data || '').toString('utf8'));
-        return res.json(parsed);
+        const contentTypeResp = (resp.headers && resp.headers['content-type']) || '';
+        const rawText = Buffer.isBuffer(resp.data) ? Buffer.from(resp.data).toString('utf8') : String(resp.data || '');
+        if (contentTypeResp.includes('application/json')) {
+          try { return res.json(JSON.parse(rawText)); } catch (e) { return res.send(rawText); }
+        }
+        return res.send(rawText);
       } catch (e) {
-        // fallback to raw text
-        return res.send(Buffer.from(resp.data || '').toString('utf8'));
+        return res.send(String(resp.data || ''));
       }
     }
-
-    // Default: send raw body
-    return res.send(Buffer.from(resp.data || '').toString('utf8'));
+    return res.json({ error: 'upstream_unavailable', details: resp && resp.statusText ? resp.statusText : 'no response body', status: statusToSend });
   } catch (err) {
     const latency = Date.now() - start;
     console.error('[PROXY] error forwarding', err && err.message ? err.message : err, 'latency', latency);
     const status = (err && err.response && err.response.status) ? err.response.status : 502;
-    const details = (err && err.code) ? err.code : (err && err.message) ? err.message : 'upstream_error';
+    // Try to extract body text for debugging if available
+    let details = (err && err.code) ? err.code : (err && err.message) ? err.message : 'upstream_error';
+    try {
+      if (err && err.response && err.response.data) {
+        const raw = err.response.data;
+        details = Buffer.isBuffer(raw) ? Buffer.from(raw).toString('utf8').slice(0,1000) : String(raw).slice(0,1000);
+      }
+    } catch (e) {}
+    console.error('[PROXY] final error response', { requestId, status, details });
     return res.status(status).json({ error: 'upstream unavailable', details });
   }
 });
