@@ -4,6 +4,8 @@ Database AI router (CommonJS .cjs)
 const express = require('express');
 const router = express.Router();
 const fetch = require('node-fetch');
+const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 
 require('dotenv').config();
 
@@ -38,6 +40,39 @@ const SERVICE_UNAVAILABLE = {
   en: "Service temporarily unavailable. Try again later.",
   az: "Xidmət müvəqqəti əlçatan deyil. Sonra yenidən cəhd edin.",
 };
+
+const DEFAULT_TIMEOUT_MS = Number(process.env.AI_HANDLER_TIMEOUT_MS || 60000);
+
+function logError(error_id, err, route) {
+  try {
+    const payload = {
+      timestamp: new Date().toISOString(),
+      level: 'error',
+      service: 'api-dbquery',
+      route: route || '/api/dbquery',
+      error_id,
+      message: err && err.message ? err.message : String(err),
+      stack: err && err.stack ? err.stack : undefined
+    };
+    console.error(JSON.stringify(payload));
+  } catch (e) {
+    console.error('[LOG_ERROR] failed to log error', e && e.message ? e.message : e);
+  }
+}
+
+function sendError(res, status, message, err, route) {
+  const error_id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : uuidv4();
+  logError(error_id, err || { message }, route);
+  return res.status(status).json({ error_id, message });
+}
+
+function withTimeout(promise, ms) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), ms); })
+  ]).finally(() => clearTimeout(timer));
+}
 
 function safeLog() {
   console.log.apply(console, arguments);
@@ -76,6 +111,7 @@ router.get('/health', (req, res) => {
 });
 
 async function handleDbQuery(req, res) {
+  // Top-level error handling will convert unexpected exceptions into structured responses
   try {
     const hdr = req.headers || {};
     const interesting = {
@@ -101,13 +137,14 @@ async function handleDbQuery(req, res) {
   }
 
   if (!question || typeof question !== 'string') {
-    return res.status(400).json({ answer: REJECTION_MESSAGES[language] || REJECTION_MESSAGES.en });
+    // Missing required field
+    return res.status(400).json({ error: "Missing required field 'question'." });
   }
 
   // Validate OPENAI key early and return a clear error if missing/malformed
   if (!OPENAI_API_KEY) {
     safeLog('[AI_ROUTE] Missing or malformed OPENAI_API_KEY');
-    return res.status(500).json({ error: 'Server misconfiguration: OPENAI_API_KEY not set or malformed' });
+    return sendError(res, 500, 'Server misconfiguration: OPENAI_API_KEY not set or malformed', new Error('OPENAI_API_KEY missing or malformed'));
   }
 
   // If the client supplied contextSuggestions, we no longer short-circuit by
@@ -124,12 +161,12 @@ async function handleDbQuery(req, res) {
 
     let classifierResp;
     try {
-      const j = await callOpenAIChat(classifierMessages, 50);
+      const j = await withTimeout(callOpenAIChat(classifierMessages, 50), DEFAULT_TIMEOUT_MS);
       classifierResp = j.choices?.[0]?.message?.content || '';
     } catch (e) {
       safeLog('Classifier call failed: ', e.message || e.toString());
       if (e.isBadKey) {
-        return res.status(500).json({ error: 'OPENAI_API_KEY appears malformed. Please update environment variable without quotes/newlines.' });
+        return sendError(res, 500, 'OPENAI_API_KEY appears malformed. Please update environment variable without quotes/newlines.', e);
       }
       if (e.status === 429 || /quota/i.test(String(e.message))) {
         return res.status(429).json({ error: 'OpenAI quota exceeded. Please check billing/usage.' });
@@ -160,7 +197,7 @@ async function handleDbQuery(req, res) {
 
     let answerText = '';
     try {
-      const j = await callOpenAIChat(chatMessages, 800);
+      const j = await withTimeout(callOpenAIChat(chatMessages, 800), DEFAULT_TIMEOUT_MS);
       answerText = j.choices?.[0]?.message?.content || '';
       // basic sanitization
       answerText = answerText.replace(/<[^>]*>/g, '');
@@ -201,21 +238,28 @@ async function handleDbQuery(req, res) {
     } catch (e) {
       safeLog('Answer generation failed:', e.message || e.toString());
       if (e.isBadKey) {
-        return res.status(500).json({ error: 'OPENAI_API_KEY appears malformed. Please update environment variable without quotes/newlines.' });
+        return sendError(res, 500, 'OPENAI_API_KEY appears malformed. Please update environment variable without quotes/newlines.', e);
       }
       if (e.status === 429 || /quota/i.test(String(e.message))) {
         return res.status(429).json({ error: 'OpenAI quota exceeded. Please check billing/usage.' });
       }
       return res.status(503).json({ answer: SERVICE_UNAVAILABLE[language] || SERVICE_UNAVAILABLE.en });
     }
-
     return res.json({ answer: answerText });
   } catch (err) {
-    safeLog('Unexpected error in /api/ai/dbquery:', err && err.message ? err.message : String(err));
-    return res.status(503).json({ answer: SERVICE_UNAVAILABLE.en });
+    // Unexpected/unhandled error - log with error id and return structured message
+    return sendError(res, 500, 'Internal server error', err, '/api/dbquery');
   }
 }
 
-router.post('/dbquery', express.json(), handleDbQuery);
+// CORS preflight support for browser clients
+router.options('/dbquery', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  return res.sendStatus(204);
+});
+
+router.post('/dbquery', express.json({ limit: '10mb' }), handleDbQuery);
 router.handleDbQuery = handleDbQuery;
 module.exports = router;

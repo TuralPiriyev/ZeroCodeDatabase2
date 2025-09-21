@@ -330,6 +330,23 @@ try {
 } catch (e) {
   console.warn('Could not mount proxy router:', e && e.message ? e.message : e);
 }
+// Backward compatibility: if frontend POSTs to /api/proxy/dbquery but our internal
+// AI handler is at /api/dbquery, forward internally preserving method/body/headers.
+app.post('/api/proxy/dbquery', express.json({ limit: '10mb' }), (req, res, next) => {
+  try {
+    // If aiHandler exists (was mounted earlier), call it directly
+    if (aiHandler && typeof aiHandler === 'function') {
+      // Attach forwarded flag so handler can detect original path if needed
+      req.headers['x-forwarded-for-proxy'] = 'internal-forward';
+      return aiHandler(req, res, next);
+    }
+    // No ai handler; return 404 so callers see missing route
+    return res.status(404).json({ error: 'not_found', message: '/api/dbquery handler not available' });
+  } catch (err) {
+    console.error('[PROXY_INTERNAL_FORWARD] error', err && err.message ? err.message : err);
+    return res.status(500).json({ error: 'forward_failed', details: err && err.message ? err.message : String(err) });
+  }
+});
 // disable ETag globally (so browsers/proxies less likely to return 304 for API)
 app.disable('etag');
 
