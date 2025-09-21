@@ -63,11 +63,14 @@ router.post('/*', async (req, res) => {
         }
         const queryIndex = (req.originalUrl || '').indexOf('?');
         const query = queryIndex >= 0 ? (req.originalUrl || '').slice(queryIndex) : '';
-        upstreamUrl = `${PROXY_UPSTREAM}/models/${encodeURIComponent(MYSTER_OWNER)}/${encodeURIComponent(MYSTER_MODEL)}${query}`;
+        // Many Myster deployments expect a '/chat' suffix for conversation endpoints
+        // Ensure we forward to '/models/:owner/:model/chat' to avoid 404s when upstream expects chat path
+        upstreamUrl = `${PROXY_UPSTREAM}/models/${encodeURIComponent(MYSTER_OWNER)}/${encodeURIComponent(MYSTER_MODEL)}/chat${query}`;
       }
     } else {
       // For other paths, forward to PROXY_UPSTREAM + suffix
-      upstreamUrl = `${PROXY_UPSTREAM}${suffix}`;
+      // Trim potential duplicate slashes when joining
+      upstreamUrl = `${PROXY_UPSTREAM.replace(/\/+$/, '')}${suffix}`;
     }
 
     // Build headers for upstream request

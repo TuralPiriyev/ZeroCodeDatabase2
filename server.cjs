@@ -322,16 +322,9 @@ try {
   console.warn('Could not mount AI router in server.cjs (deferred):', e && e.message ? e.message : e);
 }
 
-// Mount proxy router for third-party API forwarding (keeps API keys on server)
-try {
-  const proxyRouter = require('./server/proxy.js');
-  app.use('/api/proxy', proxyRouter);
-  console.log('Mounted proxy router at /api/proxy');
-} catch (e) {
-  console.warn('Could not mount proxy router:', e && e.message ? e.message : e);
-}
 // Backward compatibility: if frontend POSTs to /api/proxy/dbquery but our internal
 // AI handler is at /api/dbquery, forward internally preserving method/body/headers.
+// Register this BEFORE mounting the external proxy router so local AI handler takes precedence
 app.post('/api/proxy/dbquery', express.json({ limit: '10mb' }), (req, res, next) => {
   try {
     // If aiHandler exists (was mounted earlier), call it directly
@@ -347,6 +340,15 @@ app.post('/api/proxy/dbquery', express.json({ limit: '10mb' }), (req, res, next)
     return res.status(500).json({ error: 'forward_failed', details: err && err.message ? err.message : String(err) });
   }
 });
+
+// Mount proxy router for third-party API forwarding (keeps API keys on server)
+try {
+  const proxyRouter = require('./server/proxy.js');
+  app.use('/api/proxy', proxyRouter);
+  console.log('Mounted proxy router at /api/proxy');
+} catch (e) {
+  console.warn('Could not mount proxy router:', e && e.message ? e.message : e);
+}
 // disable ETag globally (so browsers/proxies less likely to return 304 for API)
 app.disable('etag');
 
