@@ -1,0 +1,5 @@
+(node:23632) [MONGOOSE] Warning: Duplicate schema index on {"id":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:23632) [MONGOOSE] Warning: Duplicate schema index on {"sharedId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+❌ Server error event: listen EADDRINUSE: address already in use 0.0.0.0:5000
+❌ Server error code: EADDRINUSE
