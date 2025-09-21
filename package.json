@@ -17,7 +17,7 @@
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@paypal/react-paypal-js": "^8.9.1",
-    "axios": "^1.10.0",
+    "axios": "^1.12.2",
     "bcrypt": "^6.0.0",
     "body-parser": "^2.2.0",
     "clsx": "^2.1.0",
@@ -31,6 +31,7 @@
     "lucide-react": "^0.344.0",
     "mongoose": "^8.16.0",
     "moongose": "^1.0.0",
+    "nock": "^14.0.10",
     "node-cron": "^4.2.0",
     "nodemailer": "^7.0.3",
     "nodemon": "^2.0.20",
@@ -47,6 +48,7 @@
     "socket.io-client": "^4.8.1",
     "sql.js": "^1.13.0",
     "stripe": "^18.3.0",
+    "supertest": "^7.1.4",
     "tailwind": "^4.0.0",
     "uuid": "^9.0.1",
     "yjs": "^13.6.27"

@@ -3,7 +3,9 @@ Database AI router (CommonJS .cjs)
 */
 const express = require('express');
 const router = express.Router();
-const fetch = require('node-fetch');
+// const fetch = require('node-fetch');
+// Use server-side Myster client instead of routing via client proxy
+const { callMysterAPI } = require('../../server/utils/callMysterAPI');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 
@@ -85,25 +87,23 @@ function escapeRegExp(str) {
 }
 
 async function callOpenAIChat(messages, max_tokens = 800) {
-  // Route model calls through the server proxy to centralize API keys (HF_KEY/OpenAI)
-  // Use a relative path so deployments don't bake in localhost or external hostnames.
-  const proxyUrl = '/api/proxy/dbquery';
-  const body = { messages, model: MODEL, max_tokens };
-  const res = await fetch(proxyUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    const err = new Error(`Proxy/OpenAI error: ${res.status} ${text}`);
-    err.status = res.status;
-    throw err;
+  // New behavior: call upstream Myster (or configured provider) directly from server
+  // Build payload matching the model's expected shape: use /models/:owner/:model for Myster
+  const owner = (process.env.MYSTER_OWNER || '').trim();
+  const model = (process.env.MYSTER_MODEL || '').trim();
+  if (!owner || !model) {
+    const e = new Error('MYSTER_OWNER or MYSTER_MODEL not configured');
+    e.isBadKey = true;
+    throw e;
   }
 
-  const j = await res.json();
-  return j;
+  const path = `/models/${encodeURIComponent(owner)}/${encodeURIComponent(model)}`;
+  const body = { inputs: messages, parameters: { max_tokens: Number(max_tokens || 800) } };
+
+  const resp = await callMysterAPI({ path, method: 'POST', body, timeoutMs: Number(process.env.AI_HANDLER_TIMEOUT_MS || 60000) });
+
+  // Expecting Myster /models responses to be JSON similar to HF: { data: [...] } or { choices: [...] }
+  return resp.body;
 }
 
 router.get('/health', (req, res) => {

@@ -7,10 +7,7 @@ const router = express.Router();
 // Parse JSON bodies for this router
 router.use(express.json({ limit: '5mb' }));
 
-// Config from env
-const MYSTER_KEY = (process.env.MYSTER_API_KEY || '').trim();
-const MYSTER_OWNER = (process.env.MYSTER_OWNER || process.env.HF_OWNER || '').trim();
-const MYSTER_MODEL = (process.env.MYSTER_MODEL || process.env.HF_MODEL || '').trim();
+// PROXY_UPSTREAM may be configured at load time. Keys and model/owner are read per-request
 const PROXY_UPSTREAM = (process.env.MYSTER_API_BASE_URL || process.env.PROXY_UPSTREAM || 'https://api.myster.example').replace(/\/+$/, '');
 
 // Health check
@@ -45,10 +42,14 @@ router.post('/*', async (req, res) => {
     // suffix looks like '/dbquery' or '/models/x/y?foo=1' etc.
 
     let upstreamUrl;
-    // Special-case: support legacy frontend calls to /api/proxy/dbquery -> route to Mistral chat completions
-    // This allows the frontend to remain unchanged while we forward to Mistral.
-    const MISTRAL_KEY = (process.env.MISTRAL_API_KEY || '').trim();
-    const MISTRAL_MODEL = (process.env.MISTRAL_MODEL || 'mistral-small-latest').trim();
+  // Special-case: support legacy frontend calls to /api/proxy/dbquery -> route to Mistral chat completions
+  // This allows the frontend to remain unchanged while we forward to Mistral.
+  const MISTRAL_KEY = (process.env.MISTRAL_API_KEY || '').trim();
+  const MISTRAL_MODEL = (process.env.MISTRAL_MODEL || 'mistral-small-latest').trim();
+  // Read Myster config at request-time to avoid stale env snapshot
+  const MYSTER_KEY = (process.env.MYSTER_API_KEY || '').trim();
+  const MYSTER_OWNER = (process.env.MYSTER_OWNER || process.env.HF_OWNER || '').trim();
+  const MYSTER_MODEL = (process.env.MYSTER_MODEL || process.env.HF_MODEL || '').trim();
     if (suffix === '' || suffix === '/' || suffix === '/dbquery') {
       // If MISTRAL_API_KEY is present, forward to Mistral chat completion endpoint
       if (MISTRAL_KEY) {
