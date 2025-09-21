@@ -34,6 +34,8 @@ function ensureRequestId(req) {
 router.post('/*', async (req, res) => {
   const start = Date.now();
   const requestId = ensureRequestId(req);
+  // Early entry log for debugging connection resets
+  try { console.log(`[PROXY-HANDLER] entry ${requestId} ${req.method} ${req.originalUrl}`); } catch (e) {}
 
   try {
     // Determine suffix path and query relative to /api/proxy (router is mounted at /api/proxy)
@@ -244,18 +246,24 @@ router.post('/*', async (req, res) => {
     return res.json({ error: 'upstream_unavailable', details: resp && resp.statusText ? resp.statusText : 'no response body', status: statusToSend });
   } catch (err) {
     const latency = Date.now() - start;
-    console.error('[PROXY] error forwarding', err && err.message ? err.message : err, 'latency', latency);
-    const status = (err && err.response && err.response.status) ? err.response.status : 502;
+    // Log full stack and details for debugging
+    try { console.error('[PROXY] error forwarding', err && err.stack ? err.stack : err, 'latency', latency); } catch (e) { console.error('[PROXY] error while logging error', e); }
+    const status = (err && err.response && err.response.status) ? err.response.status : (err && err.status) ? err.status : 502;
     // Try to extract body text for debugging if available
     let details = (err && err.code) ? err.code : (err && err.message) ? err.message : 'upstream_error';
     try {
       if (err && err.response && err.response.data) {
         const raw = err.response.data;
-        details = Buffer.isBuffer(raw) ? Buffer.from(raw).toString('utf8').slice(0,1000) : String(raw).slice(0,1000);
+        details = Buffer.isBuffer(raw) ? Buffer.from(raw).toString('utf8').slice(0,2000) : String(raw).slice(0,2000);
       }
-    } catch (e) {}
+      if (err && err.bodyText) {
+        details = String(err.bodyText).slice(0,2000);
+      }
+    } catch (e) { console.error('[PROXY] error extracting details', e && e.stack ? e.stack : e); }
     console.error('[PROXY] final error response', { requestId, status, details });
-    return res.status(status).json({ error: 'upstream unavailable', details });
+    try { return res.status(status).json({ error: 'upstream unavailable', details }); } catch (e) { console.error('[PROXY] failed to send error response', e && e.stack ? e.stack : e); }
+    // If we get here, the response couldn't be sent; ensure connection closed
+    try { res.end(); } catch (e) {}
   }
 });
 

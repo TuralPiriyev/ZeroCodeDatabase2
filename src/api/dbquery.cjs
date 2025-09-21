@@ -109,8 +109,11 @@ async function callMysterWrapped(messages, max_tokens = 800) {
   let body;
   if (baseUrl && baseUrl.includes('mistral.ai')) {
     // Use Mistral-style chat completions endpoint
+    // NOTE: Mistral cloud rejects unknown top-level properties named `parameters` (422).
+    // Do not send `parameters` here; omit generation knobs or map them explicitly if needed.
     path = baseUrl.replace(/\/+$/, '') + '/chat/completions';
-    body = { model: model, messages: messages, parameters: { max_tokens: Number(max_tokens || 800) } };
+    body = { model: model, messages: messages };
+    try { safeLog('[AI_ROUTE][MISTRAL] sending chat payload (no parameters)'); } catch (e) {}
   } else {
     path = `/models/${encodeURIComponent(owner)}/${encodeURIComponent(model)}/chat`;// chat path example
     body = { inputs: messages, parameters: { max_tokens: Number(max_tokens || 800) } };
@@ -130,10 +133,11 @@ async function callMysterWrapped(messages, max_tokens = 800) {
     const baseUrl = (process.env.MYSTER_API_BASE_URL || '').trim();
     if (err && err.status === 422 && baseUrl && baseUrl.includes('mistral.ai')) {
       try {
+        // Try simpler fallback: flatten messages to a single input string and DO NOT include `parameters` (Mistral rejects it)
         const flat = Array.isArray(messages) ? messages.map(m => (m && m.content) ? m.content : String(m || '')).join('\n\n') : String(messages || '');
-        const altBody = { model: model, input: flat, parameters: { max_tokens: Number(max_tokens || 800) } };
+        const altBody = { model: model, input: flat };
         const altPath = baseUrl.replace(/\/+$/, '') + '/chat/completions';
-        console.log('[AI_ROUTE] trying Mistral fallback payload (input string)');
+        console.log('[AI_ROUTE] trying Mistral fallback payload (input string, no parameters)');
         resp = await callMysterAPI({ path: altPath, method: 'POST', body: altBody, timeoutMs: Number(process.env.AI_HANDLER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS) });
       } catch (err2) {
         // still failing; throw original error to be handled by caller
