@@ -97,10 +97,16 @@ async function callMysterAPI(opts = {}) {
         return { status: resp.status, headers: resp.headers || {}, body: resp.data };
       }
 
-      // Terminal client errors
+      // Terminal client errors (4xx except 429) -> surface to caller with details
       if (resp.status >= 400 && resp.status < 500 && resp.status !== 429) {
         const err = makeError(`Upstream client error ${resp.status}`, resp.status);
         err.details = resp.data;
+        // Attach raw body text for easier diagnostics when JSON parsing fails
+        try {
+          err.bodyText = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
+        } catch (e) {
+          err.bodyText = String(resp.data);
+        }
         throw err;
       }
 
@@ -116,10 +122,11 @@ async function callMysterAPI(opts = {}) {
         continue;
       }
 
-      // Other statuses -> treat as error
-      const errOther = makeError(`Unexpected upstream status ${resp.status}`, resp.status);
-      errOther.details = resp.data;
-      throw errOther;
+  // Other statuses -> treat as error and include body for diagnostics
+  const errOther = makeError(`Unexpected upstream status ${resp.status}`, resp.status);
+  errOther.details = resp.data;
+  try { errOther.bodyText = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data); } catch (e) { errOther.bodyText = String(resp.data); }
+  throw errOther;
 
     } catch (e) {
       clearTimeout(timer);

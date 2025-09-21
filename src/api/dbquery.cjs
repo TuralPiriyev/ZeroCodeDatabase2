@@ -117,7 +117,32 @@ async function callMysterWrapped(messages, max_tokens = 800) {
   }
 
   // call the util which handles base URL, auth, retries, timeout, etc.
-  const resp = await callMysterAPI({ path, method: 'POST', body, timeoutMs: Number(process.env.AI_HANDLER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS) });
+  let resp;
+  try {
+    resp = await callMysterAPI({ path, method: 'POST', body, timeoutMs: Number(process.env.AI_HANDLER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS) });
+  } catch (err) {
+    // surface upstream body for diagnostics
+    try {
+      console.warn('[AI_ROUTE] upstream error when calling model endpoint', { path, status: err && err.status, details: err && err.details });
+    } catch (e) {}
+
+    // If Mistral returned 422 for the messages payload, attempt a simpler fallback
+    const baseUrl = (process.env.MYSTER_API_BASE_URL || '').trim();
+    if (err && err.status === 422 && baseUrl && baseUrl.includes('mistral.ai')) {
+      try {
+        const flat = Array.isArray(messages) ? messages.map(m => (m && m.content) ? m.content : String(m || '')).join('\n\n') : String(messages || '');
+        const altBody = { model: model, input: flat, parameters: { max_tokens: Number(max_tokens || 800) } };
+        const altPath = baseUrl.replace(/\/+$/, '') + '/chat/completions';
+        console.log('[AI_ROUTE] trying Mistral fallback payload (input string)');
+        resp = await callMysterAPI({ path: altPath, method: 'POST', body: altBody, timeoutMs: Number(process.env.AI_HANDLER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS) });
+      } catch (err2) {
+        // still failing; throw original error to be handled by caller
+        throw err;
+      }
+    } else {
+      throw err;
+    }
+  }
 
   // provider may return multiple shapes. Normalize to an object we can read.
   // Prefer resp.body, resp.choices, resp.data, resp.text, resp[0].generated_text, or resp
@@ -202,13 +227,26 @@ async function handleDbQuery(req, res) {
         classifierResp?.text ||
         (typeof classifierResp === 'string' ? classifierResp : '') || '';
     } catch (e) {
-      safeLog('Classifier call failed: ', e && e.message ? e.message : String(e));
+      // Log detailed diagnostic info from upstream if available
+      try {
+        safeLog('Classifier call failed:', e && e.message ? e.message : String(e), 'status=', e && e.status, 'bodyText=', e && e.bodyText, 'details=', e && e.details);
+      } catch (le) {}
+
       if (e.isBadKey) {
         return sendError(res, 500, 'MYSTER_API_KEY appears malformed. Please update environment variable without quotes/newlines.', e);
       }
+
+      // Propagate upstream client errors (4xx) so callers can see reasons like 422
+      if (e && e.status && e.status >= 400 && e.status < 500) {
+        const msg = (e.bodyText && String(e.bodyText).slice(0,1000)) || (e.details && JSON.stringify(e.details)) || e.message || 'upstream_client_error';
+        // Return original status code and include diagnostic message
+        return res.status(e.status).json({ error: 'upstream_client_error', details: msg });
+      }
+
       if (e.status === 429 || /quota/i.test(String(e.message))) {
         return res.status(429).json({ error: 'Myster quota or rate limit exceeded. Please check billing/usage.' });
       }
+
       return res.status(503).json({ answer: SERVICE_UNAVAILABLE[language] || SERVICE_UNAVAILABLE.en });
     }
 
@@ -281,9 +319,13 @@ async function handleDbQuery(req, res) {
         // ignore any cleaning errors and fall back to raw answer
       }
     } catch (e) {
-      safeLog('Answer generation failed:', e && e.message ? e.message : String(e));
+      try { safeLog('Answer generation failed:', e && e.message ? e.message : String(e), 'status=', e && e.status, 'bodyText=', e && e.bodyText); } catch (le) {}
       if (e.isBadKey) {
         return sendError(res, 500, 'MYSTER_API_KEY appears malformed. Please update environment variable without quotes/newlines.', e);
+      }
+      if (e && e.status && e.status >= 400 && e.status < 500) {
+        const msg = (e.bodyText && String(e.bodyText).slice(0,1000)) || (e.details && JSON.stringify(e.details)) || e.message || 'upstream_client_error';
+        return res.status(e.status).json({ error: 'upstream_client_error', details: msg });
       }
       if (e.status === 429 || /quota/i.test(String(e.message))) {
         return res.status(429).json({ error: 'Myster quota or rate limit exceeded. Please check billing/usage.' });
