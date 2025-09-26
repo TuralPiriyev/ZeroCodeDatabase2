@@ -8,38 +8,9 @@
   <body>
     <div id="root"></div>
     <script src="/runtime-config.js"></script>
-    <!-- Dynamically inject PayPal JS SDK using runtime-config to avoid baking client-id into build -->
-    <script>
-      (function(){
-        try {
-          // runtime-config.js sets window.__APP_ENV__ with PAYPAL_CLIENT_ID
-          var cfg = (window && window.__APP_ENV__) || {};
-          var clientId = cfg.PAYPAL_CLIENT_ID || '';
-          if (clientId) {
-            var s = document.createElement('script');
-            // Optionally add a cache-busting param when runtime config requests it (useful for testing)
-            var cacheParam = '';
-            try {
-              if (cfg && (String(cfg.PAYPAL_DISABLE_CACHE) === 'true' || window.location.hostname === 'localhost')) {
-                cacheParam = '&_=' + Date.now();
-              }
-            } catch (e) { /* ignore */ }
-            s.src = 'https://www.paypal.com/sdk/js?client-id=' + encodeURIComponent(clientId) + '&components=buttons&intent=subscription&vault=true' + cacheParam;
-            s.async = true;
-            s.defer = true;
-            s.crossOrigin = 'anonymous';
-            s.onload = function() { try { window.__PAYPAL_SDK_LOAD_ERROR__ = false; } catch(e){} };
-            s.onerror = function() { try { console.error('PayPal SDK failed to load'); window.__PAYPAL_SDK_LOAD_ERROR__ = true; } catch(e){} };
-            document.head.appendChild(s);
-          } else {
-            // runtime-config not yet present or client id missing; leave it to app to load when available
-            console.warn('PayPal client id not available in window.__APP_ENV__; PayPal SDK will be loaded by app code if needed.');
-          }
-        } catch (e) {
-          console.error('Error injecting PayPal SDK', e);
-        }
-      })();
-    </script>
+    <!-- PayPal SDK is loaded by components via loadPayPalSdk or PayPalScriptProvider
+         to avoid a global injection that forces a single intent (subscription vs capture).
+         The runtime-config.js remains available for components to read PAYPAL_CLIENT_ID. -->
     <script>
       // Runtime safeguard: if any compiled code still tries to call the hard-coded
       // zerocodedb.online host, rewrite those requests to the local proxy to avoid
