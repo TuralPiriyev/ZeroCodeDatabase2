@@ -1,5 +1,6 @@
 // src/pages/SubscribePage.tsx
 import React, { useMemo, useEffect, useState } from 'react';
+import OneTimePayButton from '../components/OneTimePayButton';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
 import { useLocation } from 'react-router-dom';
 import { loadPayPalSdk } from '../utils/loadPaypalSdk';
@@ -189,7 +190,29 @@ const SubscribePage: React.FC = () => {
     }
   }, [clientId]);
 
-  // If planId missing, show user-friendly message and keep logs for debugging
+  // For Pro plan we use the one-time order/capture flow (no subscription planId required)
+  if (plan === 'pro') {
+    return (
+      <div className="container mx-auto p-8">
+        <h2 className="text-2xl font-bold mb-4">Purchase Pro (one-time)</h2>
+        <div className="max-w-sm mx-auto">
+          <OneTimePayButton
+            plan="Pro"
+            onSuccess={(expiresAt) => {
+              console.log('Pro one-time purchase succeeded, expiresAt:', expiresAt);
+              alert('Payment successful — your Pro access is active.');
+              // Optionally, redirect or refresh user subscription status
+              try {
+                window.location.href = '/';
+              } catch (e) { /* ignore */ }
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // If planId missing for subscription-based flows (Ultimate), show user-friendly message
   if (!planId) {
     return (
       <div className="p-8">
@@ -200,7 +223,7 @@ const SubscribePage: React.FC = () => {
     );
   }
 
-  // If clientId missing, show message
+  // If clientId missing for subscription flows, show message
   if (!clientId) {
     return (
       <div className="p-8">
@@ -228,6 +251,7 @@ const SubscribePage: React.FC = () => {
           </button>
         </div>
       ) : null}
+      { /* Ultimate subscription flow (kept as-is) */ }
       {clientId ? (
         // Only render the PayPal SDK when we have a client id to avoid loading the SDK with an empty id
         <>
