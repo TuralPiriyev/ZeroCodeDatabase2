@@ -1,18 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import PlanCard from '../components/main/PlanCard';
 import { PLAN_DETAILS } from '../context/SubscriptionContext';
-import { PayPalButton } from '../components/PayPalButton';
+import OneTimePayButton from '../components/OneTimePayButton';
 import { useSubscription } from '../context/SubscriptionContext';
 
 export const ProPlanWrapper: React.FC = () => {
   const { currentPlan, changePlan } = useSubscription();
   const [checkout, setCheckout] = useState(false);
-  const [userId, setUserId] = useState('');
-
-  useEffect(() => {
-    const stored = localStorage.getItem('userId') || '';
-    setUserId(stored);
-  }, []);
+  
 
   if (currentPlan === 'pro') {
     return (
@@ -28,8 +23,7 @@ export const ProPlanWrapper: React.FC = () => {
   if (checkout) {
     return (
       <div className="max-w-sm mx-auto">
-        <PayPalButton
-          userId={userId}
+        <OneTimePayButton
           plan="Pro"
           onSuccess={(expiresAt) => {
             changePlan('pro');

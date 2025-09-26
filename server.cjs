@@ -1176,10 +1176,12 @@ const PLAN_PRICES = {
 };
 
 // Create PayPal order (frontend expects { orderID })
-app.post('/api/paypal/create-order', async (req, res) => {
+app.post('/api/paypal/create-order', authenticate, async (req, res) => {
   try {
-    const { userId, plan } = req.body || {};
-    if (!userId || !plan) return res.status(400).json({ message: 'userId and plan are required' });
+    // userId is derived from authenticated token
+    const userId = req.userId;
+    const { plan } = req.body || {};
+    if (!userId || !plan) return res.status(400).json({ message: 'Authenticated user and plan are required' });
     const planKey = String(plan).toLowerCase() === 'ultimate' ? 'Ultimate' : 'Pro';
     const price = PLAN_PRICES[planKey];
     if (!price) return res.status(400).json({ message: 'Unknown plan' });
@@ -1200,10 +1202,11 @@ app.post('/api/paypal/create-order', async (req, res) => {
 });
 
 // Capture PayPal order and update user's subscription
-app.post('/api/paypal/capture-order', async (req, res) => {
+app.post('/api/paypal/capture-order', authenticate, async (req, res) => {
   try {
-    const { orderID, userId, plan } = req.body || {};
-    if (!orderID || !userId || !plan) return res.status(400).json({ message: 'orderID, userId and plan are required' });
+    const userId = req.userId;
+    const { orderID, plan } = req.body || {};
+    if (!orderID || !userId || !plan) return res.status(400).json({ message: 'orderID, authenticated user and plan are required' });
     const planKey = String(plan).toLowerCase() === 'ultimate' ? 'Ultimate' : 'Pro';
 
     const accessToken = await getPayPalAccessToken();
