@@ -223,8 +223,8 @@ export function LegalFooter() {
       <div className="max-w-4xl mx-auto px-4 py-6 flex items-center justify-between text-sm text-gray-600">
         <div>© ZeroCodeDB • 123456789</div>
         <div className="space-x-4">
-          <a href="https://zerocodedb.online/terms" className="hover:underline">Xidmət Şərtləri</a>
-          <a href="https://zerocodedb.online/privacy" className="hover:underline">Məxfilik Siyasəti</a>
+          <a href="https://zerocodedb.online/terms" target="_blank" rel="noopener noreferrer" className="hover:underline">Xidmət Şərtləri</a>
+          <a href="https://zerocodedb.online/privacy" target="_blank" rel="noopener noreferrer" className="hover:underline">Məxfilik Siyasəti</a>
         </div>
       </div>
     </footer>
