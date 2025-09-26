@@ -14,6 +14,8 @@ import { MainPage } from './pages/MainPage';
 import { WorkspacePage } from './pages/WorkspacePage';
 
 import SubscribePage from './pages/SubscribePage';
+// @ts-ignore - imported from a .jsx file without types
+import { TermsPage, PrivacyPage } from './components/TermsPrivacyComponents';
 
 function App() {
   return (
@@ -37,6 +39,10 @@ function App() {
                   {/* Subscribe page should be available to logged-in users */}
                   <Route path="/subscribe" element={<SubscribePage />} />
                 </Route>
+
+                {/* Public legal pages */}
+                <Route path="/terms" element={<TermsPage />} />
+                <Route path="/privacy" element={<PrivacyPage />} />
 
                 {/* 404 */}
                 <Route path="*" element={<Navigate to="/login" replace />} />
