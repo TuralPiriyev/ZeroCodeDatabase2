@@ -81,22 +81,22 @@ const Footer = () => {
             <h4 className="text-lg font-semibold mb-4">Legal</h4>
             <ul className="space-y-2">
               <li>
-                <a href="#" className="text-gray-400 hover:text-[#3AAFF0] transition-colors">
+                <a href="https://zerocodedb.online/privacy" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-[#3AAFF0] transition-colors">
                   Privacy Policy
                 </a>
               </li>
               <li>
-                <a href="#" className="text-gray-400 hover:text-[#3AAFF0] transition-colors">
+                <a href="https://zerocodedb.online/terms" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-[#3AAFF0] transition-colors">
                   Terms of Service
                 </a>
               </li>
               <li>
-                <a href="#" className="text-gray-400 hover:text-[#3AAFF0] transition-colors">
+                <a href="https://zerocodedb.online/cookies" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-[#3AAFF0] transition-colors">
                   Cookie Policy
                 </a>
               </li>
               <li>
-                <a href="#" className="text-gray-400 hover:text-[#3AAFF0] transition-colors">
+                <a href="https://zerocodedb.online/gdpr" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-[#3AAFF0] transition-colors">
                   GDPR
                 </a>
               </li>
@@ -109,13 +109,13 @@ const Footer = () => {
             &copy; {new Date().getFullYear()} Database Creator. All rights reserved.
           </p>
           <div className="flex space-x-6">
-            <a href="#" className="text-gray-400 hover:text-[#3AAFF0] transition-colors text-sm">
+            <a href="https://zerocodedb.online/privacy" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-[#3AAFF0] transition-colors text-sm">
               Privacy
             </a>
-            <a href="#" className="text-gray-400 hover:text-[#3AAFF0] transition-colors text-sm">
+            <a href="https://zerocodedb.online/terms" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-[#3AAFF0] transition-colors text-sm">
               Terms
             </a>
-            <a href="#" className="text-gray-400 hover:text-[#3AAFF0] transition-colors text-sm">
+            <a href="https://zerocodedb.online/cookies" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-[#3AAFF0] transition-colors text-sm">
               Cookies
             </a>
           </div>
