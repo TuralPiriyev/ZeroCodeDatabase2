@@ -82,8 +82,10 @@ export function loadPayPalSdk(opts: LoadOptions) {
         document.head.appendChild(s);
       };
 
-      // Start with production host
-      attemptLoad(prodHost);
+  // If we're on localhost/dev, prefer sandbox host first (sandbox client IDs commonly used in dev)
+  const hostFirst = (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) ? sandboxHost : prodHost;
+  console.log('[loadPayPalSdk] loading PayPal SDK, prefer host:', hostFirst, ' intent=', intent, ' vault=', vault);
+  attemptLoad(hostFirst);
     } catch (err) {
       reject(err);
     }
