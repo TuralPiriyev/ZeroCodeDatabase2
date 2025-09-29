@@ -40,25 +40,50 @@ export function loadPayPalSdk(opts: LoadOptions) {
         });
       }
 
-      const script = document.createElement('script');
-      // Add small cache-bust so PayPal serves a fresh SDK when switching intents
-      const cacheBust = Date.now();
-      script.src = `https://www.paypal.com/sdk/js?client-id=${client}&components=buttons&vault=${vault}&intent=${intent}&_=${cacheBust}`;
-      script.async = true;
-      script.defer = true;
-      script.crossOrigin = 'anonymous';
-      script.onload = () => {
-        try {
-          // Mark the global with metadata to help future calls decide whether a reload is needed
-          (window as any).__PAYPAL_SDK_INTENT__ = { intent, vault, client };
-          if ((window as any).paypal) resolve((window as any).paypal);
-          else reject(new Error('PayPal SDK loaded but `paypal` global not found'));
-        } catch (e) {
-          reject(e);
-        }
+      const makeScript = (host: string) => {
+        const s = document.createElement('script');
+        const cacheBust = Date.now();
+        s.src = `${host}/sdk/js?client-id=${client}&components=buttons&vault=${vault}&intent=${intent}&_=${cacheBust}`;
+        s.async = true;
+        s.defer = true;
+        s.crossOrigin = 'anonymous';
+        return s;
       };
-      script.onerror = () => reject(new Error('Failed to load PayPal SDK'));
-      document.head.appendChild(script);
+
+      const prodHost = 'https://www.paypal.com';
+      const sandboxHost = 'https://www.sandbox.paypal.com';
+      let triedSandbox = false;
+
+      const attemptLoad = (host: string) => {
+        const s = makeScript(host);
+        s.onload = () => {
+          try {
+            (window as any).__PAYPAL_SDK_INTENT__ = { intent, vault, client, host };
+            console.log('[loadPayPalSdk] PayPal SDK loaded from', host);
+            if ((window as any).paypal) resolve((window as any).paypal);
+            else reject(new Error('PayPal SDK loaded but `paypal` global not found'));
+          } catch (e) {
+            reject(e);
+          }
+        };
+        s.onerror = () => {
+          console.warn('[loadPayPalSdk] PayPal SDK failed to load from', host);
+          // Remove failed script
+          try { s.parentNode && s.parentNode.removeChild(s); } catch (e) { /* ignore */ }
+          if (!triedSandbox && host === prodHost) {
+            triedSandbox = true;
+            console.log('[loadPayPalSdk] Retrying PayPal SDK load from sandbox host');
+            // Try sandbox
+            attemptLoad(sandboxHost);
+            return;
+          }
+          reject(new Error('Failed to load PayPal SDK from ' + host));
+        };
+        document.head.appendChild(s);
+      };
+
+      // Start with production host
+      attemptLoad(prodHost);
     } catch (err) {
       reject(err);
     }

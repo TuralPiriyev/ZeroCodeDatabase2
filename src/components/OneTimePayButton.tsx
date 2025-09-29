@@ -22,6 +22,7 @@ const OneTimePayButton: React.FC<Props> = ({ plan, onSuccess }) => {
       return;
     }
 
+    console.log('[OneTimePayButton] attempting to load PayPal SDK (capture) clientId=', clientId);
     loadPayPalSdk({ clientId: clientId as string, vault: false, intent: 'capture' })
       .then((paypal) => {
         if (!mounted) return;

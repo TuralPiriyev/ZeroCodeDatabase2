@@ -184,9 +184,10 @@ const SubscribePage: React.FC = () => {
         return;
       }
       // Try to load using helper
+      console.log('[SubscribePage] attempting to load PayPal SDK (subscription) with clientId=', effectiveClientId);
       loadPayPalSdk({ clientId: (effectiveClientId as string), vault: true, intent: 'subscription' })
-        .then(() => { setSdkLoadError(false); })
-        .catch((e) => { console.error('loadPayPalSdk failed', e); setSdkLoadError(true); });
+        .then(() => { console.log('[SubscribePage] PayPal SDK loaded (subscription)'); setSdkLoadError(false); })
+        .catch((e) => { console.error('[SubscribePage] loadPayPalSdk failed (subscription)', e); setSdkLoadError(true); });
     }
   }, [clientId]);
 
