@@ -218,7 +218,7 @@ const SubscribePage: React.FC = () => {
     <div className="container mx-auto p-8">
       <h2 className="text-2xl font-bold mb-4">Subscribe to {plan === 'ultimate' ? 'Ultimate' : 'Pro'}</h2>
       {plan === 'ultimate' && planId ? (
-        <div className="mb-4">
+        <div className="mb-4 flex items-center gap-3">
           <button
             id="buy-ultimate"
             className="bg-blue-600 text-white px-4 py-2 rounded shadow"
@@ -230,19 +230,22 @@ const SubscribePage: React.FC = () => {
           >
             Buy Ultimate (PayPal)
           </button>
+          <a className="text-sm text-gray-700" href={`/api/pay/fallback-subscription?plan_id=${encodeURIComponent(planId as string)}`} rel="noreferrer"> Pay via PayPal (full page)</a>
         </div>
       ) : null}
-      { /* Ultimate subscription flow (kept as-is) */ }
-      {clientId ? (
+  { /* Ultimate subscription flow (kept as-is) */ }
         // Only render the PayPal SDK when we have a client id to avoid loading the SDK with an empty id
         <>
         {sdkLoadError ? (
+          // If the SDK failed to load, automatically redirect users to the server-side
+          // full-page approval flow. This avoids showing the manual fallback link which
+          // may confuse users. We still render a small message for accessibility while
+          // the redirect happens.
           <div className="p-4 bg-yellow-50 border border-yellow-200 rounded">
-            <p className="font-medium">PayPal SDK failed to load.</p>
-            <p className="text-sm text-gray-700">This can happen if the SDK script was blocked by your browser or a privacy extension. You can open the full-page approval flow instead.</p>
-            <div className="mt-2">
-              <a className="text-blue-600 underline" href={`/api/pay/fallback-subscription?plan_id=${planId}`} target="_blank" rel="noreferrer">Open PayPal full-page approval</a>
-            </div>
+            <p className="font-medium">PayPal SDK failed to load. Redirecting to full-page approval...</p>
+            <p className="text-sm text-gray-700">If you are not redirected, <a className="text-blue-600 underline" href={`/api/pay/fallback-subscription?plan_id=${planId}`} target="_blank" rel="noreferrer">click here</a>.</p>
+            { /* perform redirect shortly after rendering */ }
+            { (function(){ if (typeof window !== 'undefined') { setTimeout(()=>{ try { window.location.href = `/api/pay/fallback-subscription?plan_id=${encodeURIComponent(planId as string)}`; } catch(e){} }, 600); } return null; })() }
           </div>
         ) : (
           <PayPalScriptProvider options={initialOptions}>
@@ -292,20 +295,23 @@ const SubscribePage: React.FC = () => {
               }}
               onError={(err: any) => {
                 console.error('PayPal error:', err);
-                alert('Payment failed');
+                // If PayPal popup is blocked or any other error occurs, fall back to
+                // server-side full-page approval so users can complete payment without
+                // relying on popups or the inline SDK.
+                try {
+                  window.location.href = `/api/pay/fallback-subscription?plan_id=${encodeURIComponent(planId as string)}`;
+                } catch (e) {
+                  alert('Payment failed');
+                }
               }}
             />
-            <div className="mt-4 text-sm">
-              <p>If the PayPal popup is blocked or shows an error, you can open a full-page approval flow instead:</p>
-              <a className="text-blue-600 underline" href={`/api/pay/fallback-subscription?plan_id=${planId}`} target="_blank" rel="noreferrer">Open PayPal full-page approval</a>
-            </div>
+              <div className="mt-4 text-sm">
+                <p>If the PayPal popup is blocked or you prefer a full-page flow, click <a className="text-blue-600 underline" href={`/api/pay/fallback-subscription?plan_id=${planId}`} rel="noreferrer">Pay via PayPal (full page)</a>.</p>
+              </div>
           </div>
           </PayPalScriptProvider>
         )}
         </>
-      ) : (
-        <div className="p-4 text-sm text-gray-600">PayPal client id not available; check your runtime configuration.</div>
-      )}
     </div>
   );
 };
