@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>PayPal Sample</title>
+  </head>
+  <body>
+    <h1>PayPal Subscriptions Sample</h1>
+    <p>Make sure you set PAYPAL_CLIENT_ID_LIVE and PRO_PLAN_ID / ULTIMATE_PLAN_ID in .env</p>
+
+    <div id="paypal-button-pro"></div>
+    <div id="paypal-button-ultimate"></div>
+
+    <script>
+      // Simple helper to fetch runtime config from server's env
+      async function cfg() {
+        try {
+          const r = await fetch('/runtime-config');
+          return await r.json();
+        } catch (e) { return {}; }
+      }
+
+      (async function(){
+        const config = await cfg();
+        const clientId = config.PAYPAL_CLIENT_ID_LIVE;
+        const PRO_PLAN_ID = config.PRO_PLAN_ID;
+        const ULTIMATE_PLAN_ID = config.ULTIMATE_PLAN_ID;
+        let DEMO_JWT = null;
+
+        if (!clientId) {
+          document.body.insertAdjacentHTML('beforeend', '<p>PAYPAL_CLIENT_ID_LIVE missing in server env</p>');
+          return;
+        }
+
+        // get demo JWT
+        try {
+          const r = await fetch('/auth/demo-login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ email: 'demo@example.com' }) });
+          const jr = await r.json();
+          DEMO_JWT = jr.token;
+          console.log('Demo token obtained');
+        } catch (e) { console.warn('Demo login failed', e); }
+
+        var s = document.createElement('script');
+        s.src = 'https://www.paypal.com/sdk/js?client-id=' + encodeURIComponent(clientId) + '&vault=true&intent=subscription';
+        s.onload = function(){
+          if (PRO_PLAN_ID) {
+            paypal.Buttons({
+              createSubscription: function(data, actions) {
+                return actions.subscription.create({ 'plan_id': PRO_PLAN_ID });
+              },
+              onApprove: function(data) {
+                fetch('/verify-subscription', { method: 'POST', headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + DEMO_JWT}, body: JSON.stringify({ subscriptionID: data.subscriptionID }) }).then(r=>r.json()).then(console.log).catch(console.error);
+              }
+            }).render('#paypal-button-pro');
+          }
+
+          if (ULTIMATE_PLAN_ID) {
+            paypal.Buttons({
+              createSubscription: function(data, actions) {
+                return actions.subscription.create({ 'plan_id': ULTIMATE_PLAN_ID });
+              },
+              onApprove: function(data) {
+                fetch('/verify-subscription', { method: 'POST', headers: {'Content-Type':'application/json', 'Authorization': 'Bearer ' + DEMO_JWT}, body: JSON.stringify({ subscriptionID: data.subscriptionID }) }).then(r=>r.json()).then(console.log).catch(console.error);
+              }
+            }).render('#paypal-button-ultimate');
+          }
+        };
+        s.onerror = function(e) { console.error('PayPal SDK failed to load', e); }
+        document.head.appendChild(s);
+      })();
+    </script>
+  </body>
+</html>
