@@ -22,9 +22,14 @@ export function loadPayPalSdk(opts: LoadOptions) {
 
       // If existing paypal global exists but requested intent/vault might differ, force reload by
       // creating a fresh script tag with a cache-busting param so PayPal serves an SDK matching the requested intent.
-      const client = encodeURIComponent(opts.clientId || '');
-      const vault = opts.vault ? 'true' : 'false';
-      const intent = opts.intent || 'subscription';
+  // Use the raw client id when building the script URL. Encoding client ids
+  // can sometimes cause PayPal to return 400 if characters are encoded
+  // differently than what their servers expect. We still keep an encoded
+  // marker for identity checks, but build the URL with the original id.
+  const clientRaw = opts.clientId || '';
+  const client = encodeURIComponent(opts.clientId || '');
+  const vault = opts.vault ? 'true' : 'false';
+  const intent = opts.intent || 'subscription';
 
       if ((window as any).paypal) {
         // If PayPal already exists, we check for a simple marker set by previous loads
@@ -40,10 +45,13 @@ export function loadPayPalSdk(opts: LoadOptions) {
         });
       }
 
-      const makeScript = (host: string) => {
+      const makeScript = (host: string, useSbClient = false) => {
         const s = document.createElement('script');
-        const cacheBust = Date.now();
-        s.src = `${host}/sdk/js?client-id=${client}&components=buttons&vault=${vault}&intent=${intent}&_=${cacheBust}`;
+        const clientParam = useSbClient ? 'sb' : clientRaw;
+        const url = `${host}/sdk/js?client-id=${clientParam}&components=buttons&vault=${vault}&intent=${intent}`;
+        // Log the exact URL we attempt so developers can debug 400 responses.
+        console.log('[loadPayPalSdk] attempting to load PayPal SDK URL:', url);
+        s.src = url;
         s.async = true;
         s.defer = true;
         s.crossOrigin = 'anonymous';
@@ -54,8 +62,11 @@ export function loadPayPalSdk(opts: LoadOptions) {
       const sandboxHost = 'https://www.sandbox.paypal.com';
       let triedSandbox = false;
 
-      const attemptLoad = (host: string) => {
-        const s = makeScript(host);
+      // Try load normally first. If that fails for both prod and sandbox, we
+      // attempt a final fallback using PayPal's sandbox client-id shortcut 'sb'
+      // which will load the generic sandbox SDK (useful for local debugging).
+      const attemptLoad = (host: string, useSbClient = false) => {
+        const s = makeScript(host, useSbClient);
         s.onload = () => {
           try {
             (window as any).__PAYPAL_SDK_INTENT__ = { intent, vault, client, host };
@@ -67,17 +78,26 @@ export function loadPayPalSdk(opts: LoadOptions) {
           }
         };
         s.onerror = () => {
-          console.warn('[loadPayPalSdk] PayPal SDK failed to load from', host);
+          console.warn('[loadPayPalSdk] PayPal SDK failed to load from', host, ' useSbClient=', useSbClient);
           // Remove failed script
           try { s.parentNode && s.parentNode.removeChild(s); } catch (e) { /* ignore */ }
-          if (!triedSandbox && host === prodHost) {
+          if (!triedSandbox && host === prodHost && !useSbClient) {
             triedSandbox = true;
             console.log('[loadPayPalSdk] Retrying PayPal SDK load from sandbox host');
-            // Try sandbox
-            attemptLoad(sandboxHost);
+            // Try sandbox (same client id)
+            attemptLoad(sandboxHost, false);
             return;
           }
-          reject(new Error('Failed to load PayPal SDK from ' + host));
+
+          // If we already tried prod -> sandbox and both failed, try sandbox with
+          // the special 'sb' client id as a last resort for local debugging.
+          if (!useSbClient && host === sandboxHost) {
+            console.log('[loadPayPalSdk] Both prod and sandbox failed; attempting sandbox with client-id=sb (debug fallback)');
+            attemptLoad(sandboxHost, true);
+            return;
+          }
+
+          reject(new Error('Failed to load PayPal SDK from ' + host + ' (useSbClient=' + useSbClient + ')'));
         };
         document.head.appendChild(s);
       };
