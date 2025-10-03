@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import PlanCard from '../components/main/PlanCard';
 import { PLAN_DETAILS } from '../context/SubscriptionContext';
-import OneTimePayButton from '../components/OneTimePayButton';
+import PaypalSubscription from '../components/PaypalSubscription';
 import { useSubscription } from '../context/SubscriptionContext';
 
 export const ProPlanWrapper: React.FC = () => {
@@ -23,11 +23,11 @@ export const ProPlanWrapper: React.FC = () => {
   if (checkout) {
     return (
       <div className="max-w-sm mx-auto">
-        <OneTimePayButton
-          plan="Pro"
-          onSuccess={(expiresAt) => {
+        <PaypalSubscription
+          planId={process.env.REACT_APP_PAYPAL_PLAN_PRO_ID || (window as any).__APP_ENV__?.PAYPAL_PLAN_PRO_ID}
+          onSuccess={(data: any) => {
             changePlan('pro');
-            console.log('Pro expires at', expiresAt);
+            console.log('Pro subscription success', data);
           }}
         />
       </div>

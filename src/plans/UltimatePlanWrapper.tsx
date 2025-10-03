@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import PlanCard from '../components/main/PlanCard';
 import { PLAN_DETAILS } from '../context/SubscriptionContext';
 import { PayPalButton } from '../components/PayPalButton';
@@ -7,12 +7,7 @@ import { useSubscription } from '../context/SubscriptionContext';
 export const UltimatePlanWrapper: React.FC = () => {
   const { currentPlan, changePlan } = useSubscription();
   const [checkout, setCheckout] = useState(false);
-  const [userId, setUserId] = useState('');
-
-  useEffect(() => {
-    const stored = localStorage.getItem('userId') || '';
-    setUserId(stored);
-  }, []);
+  // no client-side userId required; server will derive user from auth
 
   if (currentPlan === 'ultimate') {
     return (
@@ -26,14 +21,14 @@ export const UltimatePlanWrapper: React.FC = () => {
   }
 
   if (checkout) {
+    const planId = process.env.REACT_APP_PAYPAL_PLAN_ULTIMATE_ID || (window as any).__APP_ENV__?.PAYPAL_PLAN_ULTIMATE_ID;
     return (
       <div className="max-w-sm mx-auto">
         <PayPalButton
-          userId={userId}
-          plan="Ultimate"
+          planId={planId}
           onSuccess={(expiresAt) => {
             changePlan('ultimate');
-            console.log('Ultimate expires at', expiresAt);
+            console.log('Ultimate subscription success', expiresAt);
           }}
         />
       </div>
