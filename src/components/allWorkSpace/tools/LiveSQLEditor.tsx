@@ -60,6 +60,8 @@ CREATE TABLE users (
   
   const editorRef = useRef<any>(null);
   const timeoutRef = useRef<NodeJS.Timeout>();
+  const currentSchemaRef = useRef<any>(null);
+  const completionProviderRef = useRef<any>(null);
 
   const handleEditorDidMount = (editor: any, monaco: any) => {
     editorRef.current = editor;
@@ -98,40 +100,57 @@ CREATE TABLE users (
       }
     });
 
-    // Completion provider: suggest table names and table columns when user types a dot (e.g. "team.")
+    // Completion provider: suggest table names and table columns (prefix-match + table.column)
     try {
-      monaco.languages.registerCompletionItemProvider('sql', {
-        triggerCharacters: ['.', '"', '`'],
+      // keep provider ref so we can dispose later if needed
+      if (completionProviderRef.current) {
+        try { completionProviderRef.current.dispose(); } catch (e) {}
+        completionProviderRef.current = null;
+      }
+
+      completionProviderRef.current = monaco.languages.registerCompletionItemProvider('sql', {
         provideCompletionItems: (model: any, position: any) => {
           try {
-            const lineContent: string = model.getLineContent(position.lineNumber).substring(0, position.column - 1);
+            const lineBeforeCursor = model.getLineContent(position.lineNumber).substring(0, position.column - 1);
 
-            // If user typed something like `tableName.` then show that table's columns
-            const tableDotMatch = lineContent.match(/([A-Za-z0-9_`"]+)\.$/);
+            // Match patterns like: tableName.colPrefix  OR  tableName.
+            const tableDotMatch = lineBeforeCursor.match(/([A-Za-z0-9_`\"]+)\.([A-Za-z0-9_]*)$/);
             if (tableDotMatch) {
-              let raw = tableDotMatch[1];
-              // strip backticks/quotes
-              raw = raw.replace(/^\`|\`$/g, '').replace(/^\"|\"$/g, '');
-              const tableName = raw;
-              const table = currentSchema?.tables?.find((t: any) => t.name === tableName || t.name.toLowerCase() === tableName.toLowerCase());
+              let rawTable = tableDotMatch[1];
+              rawTable = rawTable.replace(/^`|`$/g, '').replace(/^\"|\"$/g, '');
+              const colPrefix = tableDotMatch[2] || '';
+              const schema = currentSchemaRef.current || currentSchema;
+              const table = schema?.tables?.find((t: any) => t.name === rawTable || t.name.toLowerCase() === rawTable.toLowerCase());
               if (table && Array.isArray(table.columns)) {
-                const suggestions = table.columns.map((col: any) => ({
-                  label: col.name,
-                  kind: monaco.languages.CompletionItemKind.Property,
-                  insertText: col.name,
-                  detail: col.type || 'column'
-                }));
+                const suggestions = table.columns
+                  .filter((c: any) => c.name.toLowerCase().startsWith(colPrefix.toLowerCase()))
+                  .map((col: any) => ({
+                    label: col.name,
+                    kind: monaco.languages.CompletionItemKind.Property,
+                    insertText: col.name,
+                    detail: col.type || 'column',
+                    sortText: '0' + col.name,
+                    range: new monaco.Range(position.lineNumber, position.column - colPrefix.length, position.lineNumber, position.column)
+                  }));
+
                 return { suggestions };
               }
             }
 
-            // Default: suggest table names (helpful when user is starting a statement)
-            const tableSuggestions = (currentSchema?.tables || []).map((t: any) => ({
-              label: t.name,
-              kind: monaco.languages.CompletionItemKind.Struct,
-              insertText: t.name,
-              detail: `${(t.columns || []).length} columns`
-            }));
+            // Default table name suggestions (prefix match based on current word)
+            const word = model.getWordUntilPosition(position);
+            const prefix = (word && word.word) ? word.word : '';
+            const schema = currentSchemaRef.current || currentSchema;
+            const tableSuggestions = (schema?.tables || [])
+              .filter((t: any) => t.name.toLowerCase().startsWith(prefix.toLowerCase()))
+              .map((t: any) => ({
+                label: t.name,
+                kind: monaco.languages.CompletionItemKind.Struct,
+                insertText: t.name,
+                detail: `${(t.columns || []).length} columns`,
+                sortText: '1' + t.name,
+                range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn)
+              }));
 
             return { suggestions: tableSuggestions };
           } catch (err) {
@@ -140,8 +159,6 @@ CREATE TABLE users (
         }
       });
     } catch (err) {
-      // some Monaco builds may not support registering providers at runtime in the same way; ignore gracefully
-      // eslint-disable-next-line no-console
       console.warn('Could not register Monaco completion provider', err);
     }
 
@@ -159,6 +176,11 @@ CREATE TABLE users (
         // ignore errors - best-effort
       }
     }, [currentSchema?.tables]);
+
+    // keep ref in sync
+    useEffect(() => {
+      currentSchemaRef.current = currentSchema;
+    }, [currentSchema]);
 
   const updateErrorMarkers = useCallback((monaco?: any) => {
     if (!editorRef.current || !monaco) return;
