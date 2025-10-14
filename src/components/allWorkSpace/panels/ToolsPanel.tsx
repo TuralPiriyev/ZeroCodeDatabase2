@@ -26,18 +26,18 @@ type ActiveTool =
 
 interface ToolsPanelProps {
   collapsed?: boolean;
-  pinned?: string[];
   onPin?: (toolId: string) => void;
   externalActive?: string | null;
 }
 
-const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false, pinned = [], onPin, externalActive = null }) => {
+const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false, onPin, externalActive = null }) => {
   const { currentPlan } = useSubscription();
-  const [activeTool, setActiveTool] = useState<ActiveTool>('ddl_builder');
+  const [activeTool, setActiveTool] = useState<ActiveTool>(null);
 
-  // sync external active selection
+  // sync external active selection: only show when toolbar/top selects a tool
   React.useEffect(() => {
     if (externalActive) setActiveTool(externalActive as ActiveTool);
+    else setActiveTool(null);
   }, [externalActive]);
 
   const tools = [
@@ -114,67 +114,6 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false, pinned = [],
 
   return (
     <div className={`h-full flex flex-col bg-white dark:bg-gray-900 transition-all duration-300 ${collapsed ? 'overflow-hidden' : ''}`}>
-      {/* Pinned tools quick strip */}
-      {pinned && pinned.length > 0 && (
-        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-            {pinned.map(p => (
-              <button key={p} onClick={() => setActiveTool(p as ActiveTool)} className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm">{p.replace('_',' ')}</button>
-            ))}
-          </div>
-        </div>
-      )}
-      {/* Horizontal Tabs - Navbar-dan uzaq və kiçik */}
-      <div className={`mt-4 mx-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-blue-50 dark:from-gray-800 dark:to-blue-900/20 rounded-t-lg ${collapsed ? 'hidden' : ''}`}>
-        <div className="flex overflow-x-auto scrollbar-hide px-1 py-1">
-          {tools.map(tool => {
-            const Icon = tool.icon;
-            const isAvailable = getToolAvailability(tool);
-            const isActive = activeTool === tool.id;
-            
-            return (
-              <button
-                key={tool.id}
-                draggable
-                onDragStart={(e) => { e.dataTransfer?.setData('text/plain', tool.id); }}
-                onClick={() => isAvailable && setActiveTool(tool.id)}
-                disabled={!isAvailable}
-                className={`
-                  group relative flex items-center gap-2 px-3 py-2 text-xs font-medium whitespace-nowrap 
-                  border-b-2 transition-all duration-300 min-w-fit mx-0.5 rounded-t-lg
-                  ${isActive && isAvailable
-                    ? `border-transparent bg-gradient-to-r ${tool.color} text-white shadow-md transform scale-102`
-                    : isAvailable
-                    ? 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-white dark:hover:bg-gray-800 hover:shadow-sm hover:scale-101'
-                    : 'border-transparent text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-60'
-                  }
-                `}
-              >
-                <div className={`p-1.5 rounded-md transition-all duration-300 ${
-                  isActive && isAvailable 
-                    ? 'bg-white/20 backdrop-blur-sm' 
-                    : 'bg-gray-100 dark:bg-gray-700 group-hover:bg-gray-200 dark:group-hover:bg-gray-600'
-                }`}>
-                  <Icon className="w-4 h-4" />
-                </div>
-                <div className="flex flex-col items-start">
-                  <span className="font-medium text-xs">{tool.name}</span>
-                  {!isAvailable && (
-                    <span className="text-xs bg-yellow-400 text-yellow-900 px-1.5 py-0.5 rounded-full font-medium">
-                      {tool.requiresPlan === 'pro' ? 'Pro' : 'Ultimate'}
-                    </span>
-                  )}
-                </div>
-                
-                {/* Active indicator */}
-                {isActive && isAvailable && (
-                  <div className="absolute -bottom-0.5 left-1/2 transform -translate-x-1/2 w-1.5 h-1.5 bg-white rounded-full shadow-md"></div>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
       {/* Tool Content - Scrollable və kompakt */}
       <div className={`flex-1 overflow-y-auto bg-gradient-to-br from-gray-50 to-blue-50/30 dark:from-gray-900 dark:to-blue-900/10 ${collapsed ? 'hidden' : ''}`}>
