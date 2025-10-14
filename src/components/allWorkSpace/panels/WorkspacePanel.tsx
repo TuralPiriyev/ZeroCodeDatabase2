@@ -1,5 +1,4 @@
-import React, { useState, useCallback } from 'react';
-import { ZoomIn, ZoomOut, Move, RotateCcw, Code } from 'lucide-react';
+import React, { useState, useCallback, useEffect } from 'react';
 import DatabaseCanvas from '../workspace/DatabaseCanvas';
 import SQLPreviewModal from '../workspace/SQLPreviewModal';
 
@@ -8,13 +7,23 @@ const WorkspacePanel: React.FC = () => {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [showSQLModal, setShowSQLModal] = useState(false);
 
-  const handleZoomIn = useCallback(() => {
-    setZoom(prev => Math.min(prev + 25, 200));
-  }, []);
-
-  const handleZoomOut = useCallback(() => {
-    setZoom(prev => Math.max(prev - 25, 25));
-  }, []);
+    // Helper component to listen to global workspace control events
+    const WorkspaceEventListener: React.FC<{ onShowSQL: () => void; onReset: () => void }> = ({ onShowSQL, onReset }) => {
+      useEffect(() => {
+        const handler = (e: Event) => {
+          const ev: any = e as any;
+          if (!ev || !ev.detail || !ev.detail.action) return;
+          const a = ev.detail.action;
+          if (a === 'show-sql') onShowSQL();
+          else if (a === 'zoom-in') setZoom(prev => Math.min(prev + 25, 200));
+          else if (a === 'zoom-out') setZoom(prev => Math.max(prev - 25, 25));
+          else if (a === 'reset-view') onReset();
+        };
+        window.addEventListener('workspace-control', handler as EventListener);
+        return () => window.removeEventListener('workspace-control', handler as EventListener);
+      }, [onShowSQL, onReset]);
+      return null;
+    };
 
   const handleResetView = useCallback(() => {
     setZoom(100);
@@ -28,52 +37,8 @@ const WorkspacePanel: React.FC = () => {
 
   return (
     <div className="h-full bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
-      {/* Controls */}
-      <div className="absolute top-4 right-4 z-20 flex gap-2">
-        {/* SQL Preview Button */}
-        <button
-          onClick={() => setShowSQLModal(true)}
-          className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg transition-colors duration-200 text-sm"
-        >
-          <Code className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-          <span className="text-gray-700 dark:text-gray-300">Show SQL</span>
-        </button>
-
-        {/* Zoom Controls */}
-        <div className="flex gap-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-2">
-          <button
-            onClick={handleZoomOut}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors duration-200"
-            aria-label="Zoom out"
-            disabled={zoom <= 25}
-          >
-            <ZoomOut className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-          </button>
-          
-          <span className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 min-w-16 text-center">
-            {zoom}%
-          </span>
-          
-          <button
-            onClick={handleZoomIn}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors duration-200"
-            aria-label="Zoom in"
-            disabled={zoom >= 200}
-          >
-            <ZoomIn className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-          </button>
-          
-          <div className="w-px bg-gray-200 dark:bg-gray-600 mx-1" />
-          
-          <button
-            onClick={handleResetView}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors duration-200"
-            aria-label="Reset view"
-          >
-            <RotateCcw className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-          </button>
-        </div>
-      </div>
+      {/* Listen to workspace-control events from TopToolbar */}
+  <WorkspaceEventListener onShowSQL={() => setShowSQLModal(true)} onReset={() => handleResetView()} />
 
       {/* Canvas */}
       <DatabaseCanvas 
