@@ -28,9 +28,10 @@ interface ToolsPanelProps {
   collapsed?: boolean;
   onPin?: (toolId: string) => void;
   externalActive?: string | null;
+  pinned?: string[];
 }
 
-const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false, onPin, externalActive = null }) => {
+const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false, onPin, externalActive = null, pinned = [] }) => {
   const { currentPlan } = useSubscription();
   const [activeTool, setActiveTool] = useState<ActiveTool>(null);
 
@@ -130,7 +131,9 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false, onPin, exter
                     <p className="text-blue-100 text-sm">Create and manage database tables visually</p>
                   </div>
                     <div className="ml-auto">
-                      <button onClick={() => onPin && onPin('ddl_builder')} className="text-white/80 hover:text-white text-sm">Pin</button>
+                            <button onClick={() => onPin && onPin('ddl_builder')} className="text-white/80 hover:text-white text-sm">
+                              { pinned.includes('ddl_builder') ? 'Pinned' : 'Pin' }
+                            </button>
                     </div>
                 </div>
               </div>

@@ -1,5 +1,5 @@
 // src/components/allWorkSpace/layout/MainLayout.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Menu, X, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react';
 import Header from './Header';
 import WorkspacePanel from '../panels/WorkspacePanel';
@@ -25,6 +25,8 @@ const MainLayout: React.FC = () => {
   const [isCollaborationConnected, setIsCollaborationConnected] = useState(false);
   const [pinnedTools, setPinnedTools] = useState<string[]>([]);
   const [floatingPanels, setFloatingPanels] = useState<Array<{ id: string; x: number; y: number }>>([]);
+  const draggingRef = useRef<{ id: string | null; startX: number; startY: number; offsetX: number; offsetY: number } | null>(null);
+  const rafRef = useRef<number | null>(null);
   const [activeToolGlobal, setActiveToolGlobal] = useState<string | null>('ddl_builder');
   const [cursorUpdateThrottle, setCursorUpdateThrottle] = useState<number>(0);
 
@@ -318,19 +320,71 @@ const MainLayout: React.FC = () => {
             <div
               key={fp.id}
               className="absolute z-40 bg-white dark:bg-gray-800 border rounded shadow-lg p-2"
-              style={{ left: fp.x - 120, top: fp.y - 40, width: 320 }}
-              draggable
-              onDragEnd={(ev) => {
-                // update position
-                const rect = (ev.target as HTMLElement).getBoundingClientRect();
-                setFloatingPanels(prev => prev.map(p => p.id === fp.id ? { ...p, x: rect.left, y: rect.top } : p));
+              style={{ left: fp.x - 120, top: fp.y - 40, width: 320, touchAction: 'none' }}
+              onPointerDown={(e) => {
+                // start dragging with pointer API for much smoother control than HTML5 drag/drop
+                const target = e.currentTarget as HTMLElement;
+                try { target.setPointerCapture(e.pointerId); } catch (err) { /* ignore if not supported */ }
+                const rect = target.getBoundingClientRect();
+                draggingRef.current = {
+                  id: fp.id,
+                  startX: e.clientX,
+                  startY: e.clientY,
+                  offsetX: e.clientX - rect.left,
+                  offsetY: e.clientY - rect.top,
+                };
+
+                const handlePointerMove = (ev: PointerEvent) => {
+                  const d = draggingRef.current;
+                  if (!d || d.id !== fp.id) return;
+
+                  // If pointer goes outside window bounds by a threshold, treat as popout
+                  const OUTER_THRESHOLD = 40;
+                  if (ev.clientX < -OUTER_THRESHOLD || ev.clientY < -OUTER_THRESHOLD || ev.clientX > window.innerWidth + OUTER_THRESHOLD || ev.clientY > window.innerHeight + OUTER_THRESHOLD) {
+                    // Open popout window for this tool and remove floating panel locally
+                    window.open(`/tools/${fp.id}?popout=1`, '_blank');
+                    setFloatingPanels(prev => prev.filter(p => p.id !== fp.id));
+                    // finish dragging
+                    try { target.releasePointerCapture(ev.pointerId); } catch (err) {}
+                    window.removeEventListener('pointermove', handlePointerMove);
+                    window.removeEventListener('pointerup', handlePointerUp);
+                    draggingRef.current = null;
+                    return;
+                  }
+
+                  // Throttle with requestAnimationFrame
+                  if (rafRef.current) return;
+                  rafRef.current = window.requestAnimationFrame(() => {
+                    rafRef.current = null;
+                    setFloatingPanels(prev => prev.map(p => p.id === fp.id ? { ...p, x: Math.max(8, ev.clientX - d.offsetX + 120), y: Math.max(8, ev.clientY - d.offsetY + 40) } : p));
+                  });
+                };
+
+                const handlePointerUp = (ev: PointerEvent) => {
+                  try { target.releasePointerCapture(ev.pointerId); } catch (err) {}
+                  window.removeEventListener('pointermove', handlePointerMove);
+                  window.removeEventListener('pointerup', handlePointerUp);
+                  // finalize position one last time
+                  const d = draggingRef.current;
+                  if (d && d.id === fp.id) {
+                    setFloatingPanels(prev => prev.map(p => p.id === fp.id ? { ...p, x: Math.max(8, ev.clientX - d.offsetX + 120), y: Math.max(8, ev.clientY - d.offsetY + 40) } : p));
+                  }
+                  draggingRef.current = null;
+                };
+
+                window.addEventListener('pointermove', handlePointerMove);
+                window.addEventListener('pointerup', handlePointerUp);
               }}
             >
               <div className="flex items-center justify-between">
-                <strong className="text-sm">{fp.id.replace('_', ' ').toUpperCase()}</strong>
+                <strong className="text-sm select-none">{fp.id.replace('_', ' ').toUpperCase()}</strong>
                 <div className="flex items-center gap-2">
                   <button onClick={() => setFloatingPanels(prev => prev.filter(p => p.id !== fp.id))} className="text-sm text-gray-500">Close</button>
-                  <button onClick={() => window.open(`/tools/${fp.id}`, '_blank')} className="text-sm text-gray-500">Pop</button>
+                  <button onClick={() => {
+                    // explicit pop action
+                    window.open(`/tools/${fp.id}?popout=1`, '_blank');
+                    setFloatingPanels(prev => prev.filter(p => p.id !== fp.id));
+                  }} className="text-sm text-gray-500">Pop</button>
                 </div>
               </div>
               <div className="mt-2">
