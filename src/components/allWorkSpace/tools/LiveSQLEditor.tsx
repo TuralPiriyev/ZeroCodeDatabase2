@@ -1,6 +1,4 @@
-import React, { useState, useRef, useCallback,
-     //useEffect
-     } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Editor } from '@monaco-editor/react';
 import { Play, Save, RotateCcw, AlertCircle, CheckCircle, Download, XCircle } from 'lucide-react';
 import { useTheme } from '../../../context/ThemeContext';
@@ -100,9 +98,67 @@ CREATE TABLE users (
       }
     });
 
+    // Completion provider: suggest table names and table columns when user types a dot (e.g. "team.")
+    try {
+      monaco.languages.registerCompletionItemProvider('sql', {
+        triggerCharacters: ['.', '"', '`'],
+        provideCompletionItems: (model: any, position: any) => {
+          try {
+            const lineContent: string = model.getLineContent(position.lineNumber).substring(0, position.column - 1);
+
+            // If user typed something like `tableName.` then show that table's columns
+            const tableDotMatch = lineContent.match(/([A-Za-z0-9_`"]+)\.$/);
+            if (tableDotMatch) {
+              let raw = tableDotMatch[1];
+              // strip backticks/quotes
+              raw = raw.replace(/^\`|\`$/g, '').replace(/^\"|\"$/g, '');
+              const tableName = raw;
+              const table = currentSchema?.tables?.find((t: any) => t.name === tableName || t.name.toLowerCase() === tableName.toLowerCase());
+              if (table && Array.isArray(table.columns)) {
+                const suggestions = table.columns.map((col: any) => ({
+                  label: col.name,
+                  kind: monaco.languages.CompletionItemKind.Property,
+                  insertText: col.name,
+                  detail: col.type || 'column'
+                }));
+                return { suggestions };
+              }
+            }
+
+            // Default: suggest table names (helpful when user is starting a statement)
+            const tableSuggestions = (currentSchema?.tables || []).map((t: any) => ({
+              label: t.name,
+              kind: monaco.languages.CompletionItemKind.Struct,
+              insertText: t.name,
+              detail: `${(t.columns || []).length} columns`
+            }));
+
+            return { suggestions: tableSuggestions };
+          } catch (err) {
+            return { suggestions: [] };
+          }
+        }
+      });
+    } catch (err) {
+      // some Monaco builds may not support registering providers at runtime in the same way; ignore gracefully
+      // eslint-disable-next-line no-console
+      console.warn('Could not register Monaco completion provider', err);
+    }
+
     // Set up real-time error markers
     updateErrorMarkers(monaco);
   };
+
+    // When the schema's tables change, prompt Monaco to refresh suggestions so completion lists table/column names
+    useEffect(() => {
+      if (!editorRef.current) return;
+      try {
+        // trigger Monaco's suggest widget refresh
+        editorRef.current.trigger && editorRef.current.trigger('user', 'editor.action.triggerSuggest', {});
+      } catch (err) {
+        // ignore errors - best-effort
+      }
+    }, [currentSchema?.tables]);
 
   const updateErrorMarkers = useCallback((monaco?: any) => {
     if (!editorRef.current || !monaco) return;
@@ -415,9 +471,10 @@ CREATE TABLE users (
         </div>
       </div>
 
-      {/* Editor */}
-      <div className="flex-1 min-h-0">
-        <div className="h-2/3 border-b border-gray-200 dark:border-gray-700">
+      {/* Editor and Results: use flex column so Monaco can size correctly
+          Editor gets ~70% and Results ~30% of the remaining area */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="flex-[7] min-h-0 border-b border-gray-200 dark:border-gray-700">
           <Editor
             height="100%"
             language="sql"
@@ -443,7 +500,7 @@ CREATE TABLE users (
         </div>
 
         {/* Results Panel */}
-        <div className="h-1/3 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
+        <div className="flex-[3] overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
           <div className="flex items-center justify-between mb-3">
             <h4 className="font-medium text-gray-900 dark:text-white">
               Execution Results
