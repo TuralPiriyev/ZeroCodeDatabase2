@@ -474,7 +474,8 @@ CREATE TABLE users (
       {/* Editor and Results: use flex column so Monaco can size correctly
           Editor gets ~70% and Results ~30% of the remaining area */}
       <div className="flex-1 min-h-0 flex flex-col">
-        <div className="flex-[7] min-h-0 border-b border-gray-200 dark:border-gray-700">
+        {/* Editor enlarged to a 10:1 ratio vs results (≈91% editor, 9% results) per user request */}
+        <div className="flex-[10] min-h-0 border-b border-gray-200 dark:border-gray-700">
           <Editor
             height="100%"
             language="sql"
@@ -483,7 +484,7 @@ CREATE TABLE users (
             onChange={handleSqlChange}
             onMount={handleEditorDidMount}
             options={{
-              fontSize: 14,
+              fontSize: 18,
               minimap: { enabled: false },
               scrollBeyondLastLine: false,
               wordWrap: 'on',
@@ -499,8 +500,8 @@ CREATE TABLE users (
           />
         </div>
 
-        {/* Results Panel */}
-        <div className="flex-[3] overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
+        {/* Results Panel (kept very small per user request) */}
+        <div className="flex-[1] overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
           <div className="flex items-center justify-between mb-3">
             <h4 className="font-medium text-gray-900 dark:text-white">
               Execution Results
