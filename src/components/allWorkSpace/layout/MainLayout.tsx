@@ -4,7 +4,7 @@ import { Menu, X, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react';
 import Header from './Header';
 import WorkspacePanel from '../panels/WorkspacePanel';
 import PortfolioPanel from '../panels/PortfolioPanel';
-import LeftToolbox from '../../LeftToolbox';
+import ToolsPanel from '../panels/ToolsPanel';
 import EnhancedTableBuilder from '../tools/EnhancedTableBuilder';
 import SQLAnomalyValidator from '../tools/SQLAnomalyValidator';
 import RealTimeCollaboration from '../tools/RealTimeCollaboration';
@@ -23,7 +23,7 @@ const MainLayout: React.FC = () => {
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [collaborativeCursors, setCollaborativeCursors] = useState<CursorData[]>([]);
   const [isCollaborationConnected, setIsCollaborationConnected] = useState(false);
-  
+  const [pinnedTools, setPinnedTools] = useState<string[]>([]);
   const [floatingPanels, setFloatingPanels] = useState<Array<{ id: string; x: number; y: number }>>([]);
   const draggingRef = useRef<{ id: string | null; startX: number; startY: number; offsetX: number; offsetY: number } | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -163,7 +163,9 @@ const MainLayout: React.FC = () => {
   const toggleLeftCollapse = () => setLeftPanelCollapsed(p => !p);
   const toggleRightCollapse = () => setRightPanelCollapsed(p => !p);
 
-  // LeftToolbox manages its own pinned state now.
+  const handlePinTool = (toolId: string) => {
+    setPinnedTools(prev => prev.includes(toolId) ? prev : [...prev, toolId]);
+  };
 
   const handleDropOnCanvas = (toolId: string, clientX: number, clientY: number) => {
     // Place floating panel near drop position
@@ -207,7 +209,7 @@ const MainLayout: React.FC = () => {
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors duration-200 relative">
       <Header />
-  <TopToolbar active={activeToolGlobal} onSelect={(id) => { setActiveToolGlobal(id); }} />
+  <TopToolbar active={activeToolGlobal} onSelect={(id) => { setActiveToolGlobal(id); setPinnedTools(prev => prev.includes(id) ? prev : [...prev, id]); }} />
       
       {/* Collaboration Status Indicator - Only show in development */}
       {import.meta.env.DEV && (
@@ -305,10 +307,8 @@ const MainLayout: React.FC = () => {
             </button>
           </div>
           
-          {/* Tools Panel Content (Left Toolbox) */}
-          <div className="h-full">
-            <LeftToolbox />
-          </div>
+          {/* Tools Panel Content */}
+          <ToolsPanel collapsed={leftPanelCollapsed} pinned={pinnedTools} onPin={handlePinTool} externalActive={activeToolGlobal} />
         </div>
 
         {/* Center Panel - Workspace */}
