@@ -473,11 +473,11 @@ CREATE TABLE users (
 
       {/* Editor and Results: use flex column so Monaco can size correctly
           Editor gets ~70% and Results ~30% of the remaining area */}
-      <div className="flex-1 min-h-0 flex flex-col">
+  <div className="flex-1 min-h-0 flex flex-col" style={{ minHeight: 320 }}>
         {/* Editor enlarged to a 10:1 ratio vs results (≈91% editor, 9% results) per user request */}
         <div className="flex-[10] min-h-0 border-b border-gray-200 dark:border-gray-700 flex">
           {/* Wrapper ensures Monaco receives a real height (avoids the 5px collapsed height) */}
-          <div className="w-full h-full min-h-0">
+          <div className="w-full h-full min-h-0" style={{ minHeight: 260, height: '100%' }}>
             <Editor
               height="100%"
               language="sql"
