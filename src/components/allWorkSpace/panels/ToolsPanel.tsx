@@ -7,7 +7,7 @@ import { useSubscription } from '../../../context/SubscriptionContext';
 import EnhancedTableBuilder from '../tools/EnhancedTableBuilder';
 import RelationshipPanel from '../tools/RelationshipPanel';
 import SQLAnomalyValidator from '../tools/SQLAnomalyValidator';
-import LiveSQLEditor from '../../LiveSqlEditor/LiveSqlEditor';
+import LiveSQLEditor from '../tools/LiveSQLEditor';
 import SmartExportManager from '../tools/SmartExportManager';
 import RealTimeCollaboration from '../tools/RealTimeCollaboration';
 import VisualQueryBuilder from '../tools/VisualQueryBuilder';
