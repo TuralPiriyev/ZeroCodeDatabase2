@@ -28,11 +28,17 @@ interface ToolsPanelProps {
   collapsed?: boolean;
   pinned?: string[];
   onPin?: (toolId: string) => void;
+  externalActive?: string | null;
 }
 
-const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false, pinned = [], onPin }) => {
+const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false, pinned = [], onPin, externalActive = null }) => {
   const { currentPlan } = useSubscription();
   const [activeTool, setActiveTool] = useState<ActiveTool>('ddl_builder');
+
+  // sync external active selection
+  React.useEffect(() => {
+    if (externalActive) setActiveTool(externalActive as ActiveTool);
+  }, [externalActive]);
 
   const tools = [
     {
@@ -108,7 +114,16 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false, pinned = [],
 
   return (
     <div className={`h-full flex flex-col bg-white dark:bg-gray-900 transition-all duration-300 ${collapsed ? 'overflow-hidden' : ''}`}>
-      
+      {/* Pinned tools quick strip */}
+      {pinned && pinned.length > 0 && (
+        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+            {pinned.map(p => (
+              <button key={p} onClick={() => setActiveTool(p as ActiveTool)} className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded text-sm">{p.replace('_',' ')}</button>
+            ))}
+          </div>
+        </div>
+      )}
       {/* Horizontal Tabs - Navbar-dan uzaq və kiçik */}
       <div className={`mt-4 mx-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-blue-50 dark:from-gray-800 dark:to-blue-900/20 rounded-t-lg ${collapsed ? 'hidden' : ''}`}>
         <div className="flex overflow-x-auto scrollbar-hide px-1 py-1">

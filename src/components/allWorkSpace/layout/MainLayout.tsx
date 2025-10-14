@@ -25,6 +25,7 @@ const MainLayout: React.FC = () => {
   const [isCollaborationConnected, setIsCollaborationConnected] = useState(false);
   const [pinnedTools, setPinnedTools] = useState<string[]>([]);
   const [floatingPanels, setFloatingPanels] = useState<Array<{ id: string; x: number; y: number }>>([]);
+  const [activeToolGlobal, setActiveToolGlobal] = useState<string | null>('ddl_builder');
   const [cursorUpdateThrottle, setCursorUpdateThrottle] = useState<number>(0);
 
   const { currentSchema } = useDatabase();
@@ -206,7 +207,7 @@ const MainLayout: React.FC = () => {
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors duration-200 relative">
       <Header />
-  <TopToolbar pinnedTools={pinnedTools} onSelect={(id) => { setPinnedTools(prev => prev.includes(id) ? prev : [...prev, id]); }} />
+  <TopToolbar active={activeToolGlobal} onSelect={(id) => { setActiveToolGlobal(id); setPinnedTools(prev => prev.includes(id) ? prev : [...prev, id]); }} />
       
       {/* Collaboration Status Indicator - Only show in development */}
       {import.meta.env.DEV && (
@@ -305,7 +306,7 @@ const MainLayout: React.FC = () => {
           </div>
           
           {/* Tools Panel Content */}
-          <ToolsPanel collapsed={leftPanelCollapsed} pinned={pinnedTools} onPin={handlePinTool} />
+          <ToolsPanel collapsed={leftPanelCollapsed} pinned={pinnedTools} onPin={handlePinTool} externalActive={activeToolGlobal} />
         </div>
 
         {/* Center Panel - Workspace */}
