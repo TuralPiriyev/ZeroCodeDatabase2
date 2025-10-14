@@ -213,6 +213,79 @@ async function start() {
     }
   });
 
+  // Server-side schema validation endpoint
+  // Accepts { action: 'create_table'|'alter_table'|'drop_table', tableName, payload? }
+  app.post('/api/workspaces/:id/validate', async (req, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const { action, tableName } = req.body || {};
+
+      if (!action) return res.status(400).json({ valid: false, errors: ['Missing action in validation request'] });
+
+      // Load persisted Yjs snapshot for this workspace (if present)
+      let snapshot = null;
+      try {
+        snapshot = await loadSnapshot(workspaceId);
+      } catch (e) {
+        console.warn('Failed to load snapshot for validation:', e);
+      }
+
+      let persistedSchema = null;
+      if (snapshot) {
+        try {
+          const doc = new Y.Doc();
+          // snapshot may be Buffer or base64; ensure Buffer
+          let buf = snapshot;
+          if (typeof snapshot === 'string') buf = Buffer.from(snapshot, 'base64');
+          Y.applyUpdate(doc, buf);
+          // Try to read a Y.Map named 'schema' (used by clients) or a Text 'schema'
+          try {
+            const map = doc.getMap && doc.getMap('schema');
+            if (map && typeof map.toJSON === 'function') {
+              persistedSchema = map.toJSON();
+            }
+          } catch (e) {}
+          if (!persistedSchema) {
+            try {
+              const txt = doc.getText && doc.getText('schema');
+              if (txt && txt.toString) persistedSchema = JSON.parse(txt.toString());
+            } catch (e) {}
+          }
+        } catch (e) {
+          console.warn('Could not apply snapshot for validation:', e);
+        }
+      }
+
+      // Default: no persisted schema => no conflicts
+      const existingTables = (persistedSchema && Array.isArray(persistedSchema.tables)) ? persistedSchema.tables : [];
+
+      if (action === 'create_table') {
+        if (!tableName) return res.status(400).json({ valid: false, errors: ['Missing tableName for create_table validation'] });
+        const exists = existingTables.find(t => (t.name || '').toString().toLowerCase() === tableName.toString().toLowerCase());
+        if (exists) {
+          return res.status(409).json({ valid: false, errors: [`Table already exists: ${tableName}`] });
+        }
+        return res.json({ valid: true });
+      }
+
+      // Other actions: best-effort basic checks
+      if (action === 'drop_table') {
+        if (!tableName) return res.status(400).json({ valid: false, errors: ['Missing tableName for drop_table validation'] });
+        const exists = existingTables.find(t => (t.name || '').toString().toLowerCase() === tableName.toString().toLowerCase());
+        if (!exists) {
+          return res.status(409).json({ valid: false, errors: [`Table does not exist: ${tableName}`] });
+        }
+        return res.json({ valid: true });
+      }
+
+      // Unknown action -> accept by default but warn
+      return res.json({ valid: true, warning: `Unknown validation action: ${action}` });
+    } catch (e) {
+      console.error('Validation endpoint error', e);
+      res.status(500).json({ valid: false, errors: ['Internal server error during validation'] });
+    }
+  });
+
   // Listen on all interfaces so external requests (including API calls) are reachable
   server.listen(PORT, () => {
     console.log('Server listening on', PORT);

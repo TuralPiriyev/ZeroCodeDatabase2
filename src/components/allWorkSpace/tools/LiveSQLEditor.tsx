@@ -1,5 +1,13 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Editor } from '@monaco-editor/react';
+// load node-sql-parser at runtime (optional dependency)
+let SQLParser: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  SQLParser = require('node-sql-parser').Parser;
+} catch (err) {
+  SQLParser = null;
+}
 import { Play, Save, RotateCcw, AlertCircle, CheckCircle, Download, XCircle } from 'lucide-react';
 import { useTheme } from '../../../context/ThemeContext';
 import { useDatabase } from '../../../context/DatabaseContext';
@@ -28,6 +36,8 @@ interface ExecutionResult {
   affectedTables?: string[];
   executionTime?: number;
   rowsAffected?: number;
+  rows?: any[];
+  columns?: string[];
 }
 
 const LiveSQLEditor: React.FC = () => {
@@ -57,6 +67,7 @@ CREATE TABLE users (
   const [isExecuting, setIsExecuting] = useState(false);
   const [autoExecute, setAutoExecute] = useState(false);
   const [lastSavedSql, setLastSavedSql] = useState('');
+  const [editorRatio, setEditorRatio] = useState<number>(0.85); // portion for editor (0..1)
   
   const editorRef = useRef<any>(null);
   const timeoutRef = useRef<NodeJS.Timeout>();
@@ -190,38 +201,71 @@ CREATE TABLE users (
 
   const validateSQL = useCallback((sqlText: string) => {
     const errors: SQLError[] = [];
-    const lines = sqlText.split('\n');
+    if (SQLParser) {
+      try {
+        const parser = new SQLParser();
+        // parse entire SQL (may throw) to get AST
+        const ast = parser.astify(sqlText);
+      // ast can be object or array of statements
+      const stmts = Array.isArray(ast) ? ast : [ast];
 
-    lines.forEach((line, index) => {
-      const trimmedLine = line.trim();
-      
-      // Basic SQL syntax validation
-      if (trimmedLine && !trimmedLine.startsWith('--')) {
-        // Check for common SQL errors
-        if (trimmedLine.toUpperCase().includes('CREATE TABLE') && !trimmedLine.includes('(')) {
-          errors.push({
-            line: index + 1,
-            column: 1,
-            message: 'CREATE TABLE statement missing column definitions',
-            severity: 'error'
-          });
+      for (const node of stmts) {
+        const type = node.type?.toUpperCase?.() || node.type;
+        const startLine = 1; // parser provides location info in some modes; default to 1
+
+        if (type === 'CREATE') {
+          const tableName = node.table?.[0]?.table || node.table?.[0] || extractTableName(node?.table?.[0]?.table || '');
+          if (!tableName) {
+            errors.push({ line: startLine, column: 1, message: 'Could not determine CREATE TABLE target', severity: 'error' });
+            continue;
+          }
+          if (currentSchema.tables.find(t => t.name === tableName)) {
+            errors.push({ line: startLine, column: 1, message: `Table already exists: ${tableName}`, severity: 'error' });
+            continue;
+          }
+          // check columns
+          const cols = (node.create_definitions || []).filter((d: any) => d.column) .map((d: any) => d.column.column);
+          const dup = cols.map((c: any) => c.toLowerCase()).filter((c: any, i: number, arr: any[]) => arr.indexOf(c) !== i);
+          if (dup.length) {
+            errors.push({ line: startLine, column: 1, message: `Duplicate columns in CREATE TABLE ${tableName}: ${[...new Set(dup)].join(', ')}`, severity: 'error' });
+          }
         }
-        
-        // Check for missing semicolons on complete statements
-        if (trimmedLine.toUpperCase().match(/^(CREATE|ALTER|DROP|INSERT|UPDATE|DELETE)/) && 
-            !trimmedLine.endsWith(';') && 
-            !lines[index + 1]?.trim().startsWith('(')) {
-          errors.push({
-            line: index + 1,
-            column: line.length,
-            message: 'Statement should end with semicolon',
-            severity: 'warning'
-          });
+
+        if (type === 'SELECT') {
+          // basic validate referenced tables
+          const from = node.from || [];
+          for (const f of from) {
+            const tbl = f.table || (f.expr && f.expr.table) || null;
+            if (tbl && !currentSchema.tables.find(t => t.name === tbl)) {
+              errors.push({ line: startLine, column: 1, message: `Referenced table does not exist: ${tbl}`, severity: 'error' });
+            }
+          }
         }
       }
-    });
 
-    setSqlErrors(errors);
+      // no parser errors
+      setSqlErrors(errors);
+      } catch (parseErr: any) {
+        // parser error: return parser message as validation error
+        errors.push({ line: 1, column: 1, message: String(parseErr?.message || parseErr), severity: 'error' });
+        setSqlErrors(errors);
+      }
+    } else {
+      // fallback simple checks
+      const lines = sqlText.split('\n');
+      lines.forEach((line, index) => {
+        const trimmedLine = line.trim();
+        if (trimmedLine && !trimmedLine.startsWith('--')) {
+          if (trimmedLine.toUpperCase().includes('CREATE TABLE') && !trimmedLine.includes('(')) {
+            errors.push({ line: index + 1, column: 1, message: 'CREATE TABLE statement missing column definitions', severity: 'error' });
+          }
+          if (trimmedLine.toUpperCase().match(/^(CREATE|ALTER|DROP|INSERT|UPDATE|DELETE|SELECT)/) && !trimmedLine.endsWith(';')) {
+            errors.push({ line: index + 1, column: line.length, message: 'Statement should end with semicolon', severity: 'warning' });
+          }
+        }
+      });
+      setSqlErrors(errors);
+    }
   }, []);
 
   const parseAndExecuteSQL = useCallback(async (sqlText: string) => {
@@ -243,6 +287,11 @@ CREATE TABLE users (
           const upperStatement = statement.toUpperCase();
           
           if (upperStatement.startsWith('CREATE TABLE')) {
+            // validation: prevent duplicate table names
+            const tName = extractTableName(statement);
+            if (currentSchema.tables.find(t => t.name === tName)) {
+              throw new Error(`Table already exists: ${tName}`);
+            }
             await handleCreateTable(statement);
             results.push({
               success: true,
@@ -267,13 +316,17 @@ CREATE TABLE users (
               affectedTables: [extractTableName(statement)]
             });
           } else {
-            // Execute other SQL statements
+            // Execute other SQL statements (SELECT, INSERT, UPDATE, DELETE, etc.)
             const result = await executeSQL(statement);
+            const rows = result.values || result.rows || [];
+            const columns = result.columns || (rows && rows[0] ? Object.keys(rows[0]) : []);
             results.push({
               success: true,
               message: 'Statement executed successfully',
               executionTime: Date.now() - startTime,
-              rowsAffected: result.values?.length || 0
+              rowsAffected: rows.length || result.affectedRows || 0,
+              rows,
+              columns
             });
           }
         } catch (error) {
@@ -313,7 +366,28 @@ CREATE TABLE users (
         columns: columns.map(col => ({ ...col, id: crypto.randomUUID() })),
         position: { x: Math.random() * 400 + 100, y: Math.random() * 300 + 100 }
       };
-      
+
+      // Call server-side validation to prevent races/duplicates
+      try {
+        const apiBase = (import.meta.env.VITE_API_BASE_URL || window.location.origin).replace(/\/$/, '');
+        const workspaceId = (currentSchema as any).workspaceId || currentSchema.id;
+        const resp = await fetch(`${apiBase}/api/workspaces/${workspaceId}/validate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'create_table', tableName })
+        });
+
+        if (!resp.ok) {
+          const json = await resp.json().catch(() => ({}));
+          const msg = (json && json.errors) ? json.errors.join('; ') : `Server validation failed with status ${resp.status}`;
+          throw new Error(msg);
+        }
+      } catch (err: any) {
+        // Surface server validation error in execution results & abort
+        setExecutionResults(prev => ([...prev, { success: false, message: `Server validation failed: ${err && err.message ? err.message : String(err)}` }]));
+        throw err;
+      }
+
       addTable(tableData);
     }
   };
@@ -484,8 +558,8 @@ CREATE TABLE users (
       {/* Editor and Results: use flex column so Monaco can size correctly
           Editor gets ~70% and Results ~30% of the remaining area */}
   <div className="flex-1 min-h-0 flex flex-col" style={{ minHeight: 320 }}>
-        {/* Editor enlarged to a 10:1 ratio vs results (≈91% editor, 9% results) per user request */}
-        <div className="flex-[10] min-h-0 border-b border-gray-200 dark:border-gray-700 flex">
+  {/* Editor area - resizable by the user */}
+  <div className="min-h-0 border-b border-gray-200 dark:border-gray-700 flex" style={{ flex: editorRatio * 100 }}>
           {/* Wrapper ensures Monaco receives a real height (avoids the 5px collapsed height) */}
           <div className="w-full h-full min-h-0" style={{ minHeight: 260, height: '100%' }}>
             <Editor
@@ -513,8 +587,34 @@ CREATE TABLE users (
           </div>
         </div>
 
-        {/* Results Panel (kept very small per user request) */}
-        <div className="flex-[1] overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
+        {/* Resizer */}
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          className="w-full h-2 cursor-row-resize bg-transparent"
+          onPointerDown={(e) => {
+            const startY = e.clientY;
+            const startRatio = editorRatio;
+            const handleMove = (ev: PointerEvent) => {
+              const delta = ev.clientY - startY;
+              const container = (e.currentTarget as HTMLElement).closest('.flex-1');
+              if (!container) return;
+              const rect = container.getBoundingClientRect();
+              const newEditorHeight = Math.max(100, (startRatio * rect.height) + delta);
+              const newRatio = Math.min(0.98, Math.max(0.2, newEditorHeight / rect.height));
+              setEditorRatio(newRatio);
+            };
+            const handleUp = () => {
+              window.removeEventListener('pointermove', handleMove);
+              window.removeEventListener('pointerup', handleUp);
+            };
+            window.addEventListener('pointermove', handleMove);
+            window.addEventListener('pointerup', handleUp);
+          }}
+        />
+
+        {/* Results Panel */}
+        <div className="overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900" style={{ flex: (1 - editorRatio) * 100 }}>
           <div className="flex items-center justify-between mb-3">
             <h4 className="font-medium text-gray-900 dark:text-white">
               Execution Results
@@ -554,39 +654,42 @@ CREATE TABLE users (
             </div>
           )}
 
-          {/* Execution Results */}
+          {/* Execution Results rendering with rows & columns */}
           {executionResults.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-4">
               {executionResults.map((result, index) => (
-                <div
-                  key={index}
-                  className={`flex items-start gap-2 p-3 rounded-lg border ${
-                    result.success
-                      ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                      : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-                  }`}
-                >
-                  {result.success ? (
-                    <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
-                  ) : (
-                    <XCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                  )}
-                  <div className="flex-1">
-                    <div className={`font-medium ${
-                      result.success 
-                        ? 'text-green-800 dark:text-green-200' 
-                        : 'text-red-800 dark:text-red-200'
-                    }`}>
-                      {result.message}
+                <div key={index} className={`p-3 rounded-lg border ${result.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      {result.success ? <CheckCircle className="w-4 h-4 text-green-500" /> : <XCircle className="w-4 h-4 text-red-500" />}
+                      <div className="font-medium text-sm">{result.message}</div>
                     </div>
-                    {result.executionTime && (
-                      <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                        Executed in {result.executionTime}ms
-                        {result.rowsAffected !== undefined && ` • ${result.rowsAffected} rows affected`}
-                        {result.affectedTables && ` • Tables: ${result.affectedTables.join(', ')}`}
-                      </div>
-                    )}
+                    <div className="text-xs text-gray-600">{result.executionTime}ms • {result.rowsAffected} rows</div>
                   </div>
+                  {result.rows && result.rows.length > 0 ? (
+                    <div className="overflow-auto border rounded bg-white">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-100">
+                          <tr>
+                            {(result.columns || Object.keys(result.rows[0] || {})).map((c, i) => (
+                              <th key={i} className="px-3 py-2 text-left font-medium">{c}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {result.rows.map((r, ri) => (
+                            <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              {(result.columns || Object.keys(r)).map((c, ci) => (
+                                <td key={ci} className="px-3 py-2 align-top">{String(r[c] ?? '')}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-600">No rows returned</div>
+                  )}
                 </div>
               ))}
             </div>
