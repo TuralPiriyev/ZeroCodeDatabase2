@@ -26,9 +26,11 @@ type ActiveTool =
 
 interface ToolsPanelProps {
   collapsed?: boolean;
+  pinned?: string[];
+  onPin?: (toolId: string) => void;
 }
 
-const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
+const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false, pinned = [], onPin }) => {
   const { currentPlan } = useSubscription();
   const [activeTool, setActiveTool] = useState<ActiveTool>('ddl_builder');
 
@@ -118,6 +120,8 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
             return (
               <button
                 key={tool.id}
+                draggable
+                onDragStart={(e) => { e.dataTransfer?.setData('text/plain', tool.id); }}
                 onClick={() => isAvailable && setActiveTool(tool.id)}
                 disabled={!isAvailable}
                 className={`
@@ -171,6 +175,9 @@ const ToolsPanel: React.FC<ToolsPanelProps> = ({ collapsed = false }) => {
                     <h2 className="text-lg font-bold">DDL Builder</h2>
                     <p className="text-blue-100 text-sm">Create and manage database tables visually</p>
                   </div>
+                    <div className="ml-auto">
+                      <button onClick={() => onPin && onPin('ddl_builder')} className="text-white/80 hover:text-white text-sm">Pin</button>
+                    </div>
                 </div>
               </div>
               <EnhancedTableBuilder />

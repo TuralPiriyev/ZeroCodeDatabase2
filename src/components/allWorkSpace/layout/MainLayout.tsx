@@ -5,6 +5,10 @@ import Header from './Header';
 import WorkspacePanel from '../panels/WorkspacePanel';
 import PortfolioPanel from '../panels/PortfolioPanel';
 import ToolsPanel from '../panels/ToolsPanel';
+import EnhancedTableBuilder from '../tools/EnhancedTableBuilder';
+import SQLAnomalyValidator from '../tools/SQLAnomalyValidator';
+import RealTimeCollaboration from '../tools/RealTimeCollaboration';
+import TopToolbar from '../TopToolbar';
 import CollaborativeCursors, { CursorData } from '../workspace/CollaborativeCursors';
 import { useDatabase } from '../../../context/DatabaseContext';
 
@@ -19,6 +23,8 @@ const MainLayout: React.FC = () => {
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [collaborativeCursors, setCollaborativeCursors] = useState<CursorData[]>([]);
   const [isCollaborationConnected, setIsCollaborationConnected] = useState(false);
+  const [pinnedTools, setPinnedTools] = useState<string[]>([]);
+  const [floatingPanels, setFloatingPanels] = useState<Array<{ id: string; x: number; y: number }>>([]);
   const [cursorUpdateThrottle, setCursorUpdateThrottle] = useState<number>(0);
 
   const { currentSchema } = useDatabase();
@@ -154,6 +160,29 @@ const MainLayout: React.FC = () => {
   const toggleLeftCollapse = () => setLeftPanelCollapsed(p => !p);
   const toggleRightCollapse = () => setRightPanelCollapsed(p => !p);
 
+  const handlePinTool = (toolId: string) => {
+    setPinnedTools(prev => prev.includes(toolId) ? prev : [...prev, toolId]);
+  };
+
+  const handleDropOnCanvas = (toolId: string, clientX: number, clientY: number) => {
+    // Place floating panel near drop position
+    setFloatingPanels(prev => [...prev, { id: toolId, x: clientX, y: clientY }]);
+  };
+
+  // Dragover/drop handlers on center
+  const handleCanvasDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleCanvasDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const toolId = e.dataTransfer.getData('text/plain') || e.dataTransfer.getData('tool-id');
+    if (toolId) {
+      // drop at mouse position
+      handleDropOnCanvas(toolId, e.clientX, e.clientY);
+    }
+  };
+
   // Enhanced cursor move handling with better throttling
   const handleCursorMove = (pos: { x: number; y: number; tableId?: string; columnId?: string }) => {
     // Strict validation and throttling
@@ -177,6 +206,7 @@ const MainLayout: React.FC = () => {
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900 transition-colors duration-200 relative">
       <Header />
+  <TopToolbar pinnedTools={pinnedTools} onSelect={(id) => { setPinnedTools(prev => prev.includes(id) ? prev : [...prev, id]); }} />
       
       {/* Collaboration Status Indicator - Only show in development */}
       {import.meta.env.DEV && (
@@ -228,7 +258,7 @@ const MainLayout: React.FC = () => {
         </div>
 
         {/* Left Panel - Advanced Tools */}
-        <div className={`
+          <div className={`
           fixed inset-y-0 left-0 z-40 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transform transition-all duration-300 ease-in-out shadow-xl
           lg:relative lg:translate-x-0 lg:shadow-none
           ${leftPanelOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -275,12 +305,44 @@ const MainLayout: React.FC = () => {
           </div>
           
           {/* Tools Panel Content */}
-          <ToolsPanel collapsed={leftPanelCollapsed} />
+          <ToolsPanel collapsed={leftPanelCollapsed} pinned={pinnedTools} onPin={handlePinTool} />
         </div>
 
         {/* Center Panel - Workspace */}
-        <div className="flex-1 lg:w-3/5">
+        <div className="flex-1 lg:w-3/5" onDragOver={handleCanvasDragOver} onDrop={handleCanvasDrop}>
           <WorkspacePanel />
+
+          {/* Floating panels rendered above canvas */}
+          {floatingPanels.map(fp => (
+            <div
+              key={fp.id}
+              className="absolute z-40 bg-white dark:bg-gray-800 border rounded shadow-lg p-2"
+              style={{ left: fp.x - 120, top: fp.y - 40, width: 320 }}
+              draggable
+              onDragEnd={(ev) => {
+                // update position
+                const rect = (ev.target as HTMLElement).getBoundingClientRect();
+                setFloatingPanels(prev => prev.map(p => p.id === fp.id ? { ...p, x: rect.left, y: rect.top } : p));
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <strong className="text-sm">{fp.id.replace('_', ' ').toUpperCase()}</strong>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setFloatingPanels(prev => prev.filter(p => p.id !== fp.id))} className="text-sm text-gray-500">Close</button>
+                  <button onClick={() => window.open(`/tools/${fp.id}`, '_blank')} className="text-sm text-gray-500">Pop</button>
+                </div>
+              </div>
+              <div className="mt-2">
+                {fp.id === 'ddl_builder' && <EnhancedTableBuilder />}
+                {fp.id === 'sql_validator' && <SQLAnomalyValidator />}
+                {fp.id === 'team_collaboration' && <RealTimeCollaboration />}
+                {/* For other tools, fallback to a simple message */}
+                {!['ddl_builder','sql_validator','team_collaboration'].includes(fp.id) && (
+                  <div className="text-xs text-gray-600">Tool content not available in floating mode yet: {fp.id}</div>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Right Panel - Portfolio & Chat */}
