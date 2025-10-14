@@ -475,29 +475,32 @@ CREATE TABLE users (
           Editor gets ~70% and Results ~30% of the remaining area */}
       <div className="flex-1 min-h-0 flex flex-col">
         {/* Editor enlarged to a 10:1 ratio vs results (≈91% editor, 9% results) per user request */}
-        <div className="flex-[10] min-h-0 border-b border-gray-200 dark:border-gray-700">
-          <Editor
-            height="100%"
-            language="sql"
-            theme={isDark ? 'vs-dark' : 'vs-light'}
-            value={sql}
-            onChange={handleSqlChange}
-            onMount={handleEditorDidMount}
-            options={{
-              fontSize: 18,
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              wordWrap: 'on',
-              lineNumbers: 'on',
-              folding: true,
-              selectOnLineNumbers: true,
-              automaticLayout: true,
-              quickSuggestions: true,
-              suggestOnTriggerCharacters: true,
-              acceptSuggestionOnEnter: 'on',
-              tabCompletion: 'on'
-            }}
-          />
+        <div className="flex-[10] min-h-0 border-b border-gray-200 dark:border-gray-700 flex">
+          {/* Wrapper ensures Monaco receives a real height (avoids the 5px collapsed height) */}
+          <div className="w-full h-full min-h-0">
+            <Editor
+              height="100%"
+              language="sql"
+              theme={isDark ? 'vs-dark' : 'vs-light'}
+              value={sql}
+              onChange={handleSqlChange}
+              onMount={handleEditorDidMount}
+              options={{
+                fontSize: 18,
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                lineNumbers: 'on',
+                folding: true,
+                selectOnLineNumbers: true,
+                automaticLayout: true,
+                quickSuggestions: true,
+                suggestOnTriggerCharacters: true,
+                acceptSuggestionOnEnter: 'on',
+                tabCompletion: 'on'
+              }}
+            />
+          </div>
         </div>
 
         {/* Results Panel (kept very small per user request) */}
