@@ -147,6 +147,16 @@ CREATE TABLE users (
 
     // Set up real-time error markers
     updateErrorMarkers(monaco);
+    // Ensure Monaco's root DOM node has a minimum height so it cannot collapse to a few pixels
+    try {
+      const dom = (editor as any).getDomNode && (editor as any).getDomNode();
+      if (dom && dom.style) {
+        dom.style.minHeight = dom.style.minHeight || '320px';
+        dom.style.height = dom.style.height || '100%';
+      }
+    } catch (err) {
+      // ignore
+    }
   };
 
     // When the schema's tables change, prompt Monaco to refresh suggestions so completion lists table/column names

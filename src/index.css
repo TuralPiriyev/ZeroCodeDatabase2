@@ -87,6 +87,12 @@ body,
     Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
 }
 
+/* Protect Monaco editor from collapsing to an extremely small height when nested in flex containers */
+.monaco-editor, .monaco-editor .monaco-scrollable-element, .monaco-editor .view-lines {
+  min-height: 240px !important;
+  height: 100% !important;
+}
+
 /* CSS for relationships */
 .arrow-path {
   stroke-dasharray: 5;
