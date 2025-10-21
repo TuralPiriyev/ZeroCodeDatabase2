@@ -14,6 +14,18 @@ const crypto = require('crypto');
 const axios = require('axios');
 const cron = require('node-cron');
 const cookieParser = require('cookie-parser');
+// Authentication helpers (OTP, token utilities)
+let generateOTP, hashOTP, generateTempToken, verifyTempToken, verifyOTP;
+try {
+  const authUtils = require('./src/utils/authUtils.cjs');
+  generateOTP = authUtils.generateOTP;
+  hashOTP = authUtils.hashOTP;
+  generateTempToken = authUtils.generateTempToken;
+  verifyTempToken = authUtils.verifyTempToken;
+  verifyOTP = authUtils.verifyOTP;
+} catch (e) {
+  console.warn('authUtils helpers not available:', e && e.message ? e.message : e);
+}
 // Load environment variables
 dotenv.config();
 
