@@ -140,6 +140,35 @@ app.use(express.json({ limit: '10mb' }));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// Rate limiter middlewares (ensure these are defined before route usage)
+let globalLimiter, authLimiter, otpLimiter, resendLimiter;
+try {
+  // Prefer the new fixedRateLimiter if present (clean replacement for corrupted file)
+  const rl = require('./src/middleware/fixedRateLimiter.cjs');
+  globalLimiter = rl.globalLimiter;
+  authLimiter = rl.authLimiter;
+  otpLimiter = rl.otpLimiter;
+  resendLimiter = rl.resendLimiter;
+  if (globalLimiter) app.use('/api', globalLimiter);
+} catch (e1) {
+  try {
+    const rl = require('./src/middleware/rateLimiter.cjs');
+    globalLimiter = rl.globalLimiter;
+    authLimiter = rl.authLimiter;
+    otpLimiter = rl.otpLimiter;
+    resendLimiter = rl.resendLimiter;
+    if (globalLimiter) app.use('/api', globalLimiter);
+  } catch (e2) {
+    console.warn('Rate limiter module not available, continuing without rate limiting:', (e2 && e2.message) || (e1 && e1.message) || e2 || e1);
+    // Provide safe no-op fallbacks so routes that reference these middlewares don't break
+    const noop = (req, res, next) => next();
+    if (!globalLimiter) globalLimiter = noop;
+    if (!authLimiter) authLimiter = noop;
+    if (!otpLimiter) otpLimiter = noop;
+    if (!resendLimiter) resendLimiter = noop;
+  }
+}
+
 // Request logging middleware
 // Response logger (status + time)
 app.use((req, res, next) => {
