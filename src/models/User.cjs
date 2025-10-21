@@ -14,8 +14,12 @@ const userSchema = new mongoose.Schema({
   ,
   // Email verification fields
   isVerified: { type: Boolean, default: false },
-  emailVerificationCode: { type: String, default: null },
-  emailVerificationExpires: { type: Date, default: null }
+  otpHash: { type: String, default: null },
+  otpExpiresAt: { type: Date, default: null },
+  otpAttempts: { type: Number, default: 0 },
+  otpResendCount: { type: Number, default: 0 },
+  lastResendAt: { type: Date, default: null },
+  registrationToken: { type: String, default: null }
 
 }, {
   timestamps: true

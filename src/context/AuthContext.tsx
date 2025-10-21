@@ -18,7 +18,7 @@ interface AuthContextType {
   isLoading: boolean;
   authError: string | null;
   login: (email: string, password: string) => Promise<boolean>;
-  register: (userData: { username: string; email: string; password: string; fullName: string; phone: string }) => Promise<boolean>;
+  register: (userData: { username: string; email: string; password: string; fullName: string; phone: string }) => Promise<{ success: boolean; tempToken?: string }>;
   logout: () => void;
   verifyCode: (email: string, code: string) => Promise<void>;
   requestResend: (email: string) => Promise<void>;
@@ -120,7 +120,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const register = async (userData: { username: string; email: string; password: string; fullName: string; phone: string }): Promise<boolean> => {
+  const register = async (userData: { username: string; email: string; password: string; fullName: string; phone: string }): Promise<{ success: boolean; tempToken?: string }> => {
     try {
       setIsLoading(true);
       setAuthError(null);
@@ -128,28 +128,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         ...userData
       });
       
-      if (response.data.token) {
-        localStorage.setItem('token', response.data.token);
-        
-        const userData = {
-          ...response.data.user,
-          color: generateUserColor(response.data.user.username),
-          isOnline: true,
-          lastSeen: new Date()
+      if (response.data.tempToken) {
+        localStorage.setItem('pendingVerificationEmail', userData.email);
+        return {
+          success: true,
+          tempToken: response.data.tempToken
         };
-        
-        setUser(userData);
-        // store email for verification page in case navigation/state is lost
-        if (response.data.user && response.data.user.email) {
-          try { localStorage.setItem('pendingVerificationEmail', response.data.user.email); } catch (e) { /* ignore */ }
-        }
-        return true;
       }
-      return false;
+      return { success: false };
     } catch (error) {
       console.error('Registration failed:', error);
       setAuthError('Registration failed. Please try again.');
-      return false;
+      return { success: false };
     } finally {
       setIsLoading(false);
     }

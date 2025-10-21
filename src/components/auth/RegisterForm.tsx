@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, SubmitHandler, UseFormRegister, FieldErrors } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
 import { User, Mail, Phone, Lock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
+import { OTPModal } from './OTPModal';
+import api from '../../utils/api';
 
 interface RegisterFormValues {
   fullName: string;
@@ -21,8 +23,13 @@ interface RegisterFormProps {
 
 export const RegisterForm: React.FC<RegisterFormProps> = ({ onLoginClick }) => {
   const navigate = useNavigate();
-  const { register: registerUser,  authError } = useAuth();
+  const { register: registerUser, authError } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showOTPModal, setShowOTPModal] = useState(false);
+  const [tempToken, setTempToken] = useState<string | null>(null);
+  const [otpError, setOtpError] = useState<string | undefined>(undefined);
+  const [remainingAttempts, setRemainingAttempts] = useState(5);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
   const {
     register,
@@ -40,27 +47,27 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onLoginClick }) => {
       confirmPassword: '',
     },
     mode: 'onChange',
-    reValidateMode: 'onChange', // Dəyişikliklər zamanı yenidən validasiya
+    reValidateMode: 'onChange',
   });
 
   const password = watch('password');
 
-  // Autofill dəyərlərini aşkar etmək üçün
   useEffect(() => {
     const timer = setTimeout(() => {
-      trigger(); // Validasiyanı əl ilə tetikləyir
-    }, 100); // 100ms gecikmə
+      trigger();
+    }, 100);
     return () => clearTimeout(timer);
   }, [trigger]);
 
   const onSubmit = async (data: RegisterFormValues) => {
-    console.log('Form data:', data); // Dəyərləri yoxlamaq üçün
-    console.log('Form errors:', errors); // Xətaları yoxlamaq üçün
     setIsSubmitting(true);
     try {
       const { confirmPassword, ...userData } = data;
-      await registerUser(userData);
-      navigate(`/verify?email=${encodeURIComponent(userData.email)}`);
+      const response = await registerUser(userData);
+      if (response.success && response.tempToken) {
+        setTempToken(response.tempToken);
+        setShowOTPModal(true);
+      }
     } catch (error) {
       console.error('Registration error:', error);
     } finally {
@@ -68,8 +75,196 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onLoginClick }) => {
     }
   };
 
+  const handleVerifyOTP = async (otp: string) => {
+    if (!tempToken) return;
+    try {
+      setOtpError(undefined);
+      const response = await api.post('/api/auth/verify-otp', {
+        tempToken,
+        otp
+      });
+      
+      if (response.data.token) {
+        localStorage.setItem('token', response.data.token);
+        navigate('/main');
+      }
+    } catch (error: any) {
+      const errorData = error.response?.data?.error;
+      if (errorData) {
+        setOtpError(errorData.message);
+        if (errorData.details?.remainingAttempts) {
+          setRemainingAttempts(errorData.details.remainingAttempts);
+        }
+      } else {
+        setOtpError('Verification failed. Please try again.');
+      }
+    }
+  };
+
+  const handleResendOTP = async () => {
+    if (!tempToken) return;
+    try {
+      setOtpError(undefined);
+      const response = await api.post('/api/auth/resend-otp', {
+        tempToken
+      });
+      
+      setRemainingAttempts(5);
+      
+      if (response.data.details?.retryAfter) {
+        setCooldownSeconds(response.data.details.retryAfter);
+      }
+    } catch (error: any) {
+      const errorData = error.response?.data?.error;
+      if (errorData) {
+        setOtpError(errorData.message);
+        if (errorData.details?.retryAfter) {
+          setCooldownSeconds(errorData.details.retryAfter);
+        }
+      } else {
+        setOtpError('Failed to resend code. Please try again.');
+      }
+    }
+  };
+
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="w-full space-y-5">
+    <>
+      <form onSubmit={handleSubmit(onSubmit)} className="w-full space-y-5">
+        <div className="flex flex-col gap-4">
+          <Input
+            label="Full Name"
+            leftIcon={<User size={18} />}
+            placeholder="Enter your full name"
+            error={errors.fullName?.message}
+            fullWidth
+            {...register('fullName', {
+              required: 'Full name is required',
+            })}
+          />
+
+          <Input
+            label="Username"
+            leftIcon={<User size={18} />}
+            placeholder="Choose a username"
+            error={errors.username?.message}
+            fullWidth
+            {...register('username', {
+              required: 'Username is required',
+              minLength: {
+                value: 3,
+                message: 'Username must be at least 3 characters',
+              },
+              pattern: {
+                value: /^[a-zA-Z0-9_]+$/,
+                message: 'Username can only contain letters, numbers, and underscores',
+              },
+            })}
+          />
+
+          <Input
+            label="Email"
+            type="email"
+            leftIcon={<Mail size={18} />}
+            placeholder="Enter your email"
+            error={errors.email?.message}
+            fullWidth
+            {...register('email', {
+              required: 'Email is required',
+              pattern: {
+                value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                message: 'Please enter a valid email',
+              },
+            })}
+          />
+
+          <Input
+            label="Phone"
+            type="tel"
+            leftIcon={<Phone size={18} />}
+            placeholder="Enter your phone number"
+            error={errors.phone?.message}
+            fullWidth
+            {...register('phone', {
+              required: 'Phone number is required',
+              pattern: {
+                value: /^[+]?[(]?[0-9]{3}[)]?[-\s.]?[0-9]{3}[-\s.]?[0-9]{4,6}$/,
+                message: 'Please enter a valid phone number',
+              },
+            })}
+          />
+
+          <Input
+            label="Password"
+            type="password"
+            leftIcon={<Lock size={18} />}
+            placeholder="Create a password"
+            error={errors.password?.message}
+            fullWidth
+            {...register('password', {
+              required: 'Password is required',
+              minLength: {
+                value: 8,
+                message: 'Password must be at least 8 characters',
+              },
+            })}
+          />
+
+          <Input
+            label="Confirm Password"
+            type="password"
+            leftIcon={<Lock size={18} />}
+            placeholder="Confirm your password"
+            error={errors.confirmPassword?.message}
+            fullWidth
+            {...register('confirmPassword', {
+              required: 'Please confirm your password',
+              validate: value => 
+                value === password || 'The passwords do not match',
+            })}
+          />
+        </div>
+
+        {authError && (
+          <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
+            {authError}
+          </div>
+        )}
+
+        <Button
+          type="submit"
+          variant="primary"
+          fullWidth
+          isLoading={isSubmitting}
+        >
+          Create Account
+        </Button>
+
+        <div className="text-center">
+          <span className="text-sm text-gray-600">
+            Already have an account?{' '}
+            <button
+              type="button"
+              className="text-blue-600 hover:text-blue-800 hover:underline focus:outline-none"
+              onClick={onLoginClick}
+            >
+              Sign in
+            </button>
+          </span>
+        </div>
+      </form>
+
+      <OTPModal
+        isOpen={showOTPModal}
+        onClose={() => setShowOTPModal(false)}
+        onVerify={handleVerifyOTP}
+        onResend={handleResendOTP}
+        error={otpError}
+        remainingAttempts={remainingAttempts}
+        cooldownSeconds={cooldownSeconds}
+      />
+    </>
+  );
+};
       <div className="flex flex-col gap-4">
         <Input
           label="Full Name"

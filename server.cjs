@@ -811,44 +811,103 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const { username, email, password, fullName, phone } = req.body;
-    if (!fullName || !phone) return res.status(400).json({ message: 'Full name and phone are required' });
+    
+    // Validate input
+    if (!fullName || !phone || !email || !password || !username) {
+      return res.status(400).json({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'All fields are required',
+          details: {
+            required: ['fullName', 'phone', 'email', 'password', 'username']
+          }
+        }
+      });
+    }
+
+    // Validate password strength
+    if (password.length < 8) {
+      return res.status(400).json({
+        error: {
+          code: 'WEAK_PASSWORD',
+          message: 'Password must be at least 8 characters long'
+        }
+      });
+    }
+
+    // Check for existing user
     const conflict = await User.findOne({ $or: [{ email }, { username }, { phone }] });
     if (conflict) {
-      const field = (conflict.email === email && 'Email') || (conflict.username === username && 'Username') || (conflict.phone === phone && 'Phone');
-      return res.status(400).json({ message: `${field} already registered` });
+      return res.status(409).json({
+        error: {
+          code: 'DUPLICATE_USER',
+          message: 'An account with these details already exists'
+        }
+      });
     }
+
     const hashed = await bcrypt.hash(password, 10);
-    // create verification code
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expires = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24h
-    const newUser = await new User({ username, email, password: hashed, fullName, phone, isVerified: false, emailVerificationCode: verificationCode, emailVerificationExpires: expires }).save();
+    
+    // Generate secure OTP
+    const otp = generateOTP();
+    const otpHash = hashOTP(otp, process.env.OTP_SECRET);
+    const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // Attempt to send verification email
+    // Create user with hashed OTP
+    const newUser = await new User({
+      username,
+      email,
+      password: hashed,
+      fullName,
+      phone,
+      isVerified: false,
+      otpHash,
+      otpExpiresAt,
+      otpAttempts: 0,
+      otpResendCount: 0
+    }).save();
+
+    // Generate temporary token for OTP verification
+    const tempToken = generateTempToken(newUser._id, process.env.JWT_SECRET);
+
+    // Send verification email
     try {
-      if (!process.env.SMTP_HOST) console.warn('SMTP not configured, skipping sendMail');
-      else {
-        const mailRes = await transporter.sendMail({
-          from: `"ZeroCodeDB" <${process.env.SMTP_USER}>`,
-          to: email,
-          subject: 'Verify your email',
-          text: `Your verification code: ${verificationCode}`,
-          html: `<p>Your verification code: <strong>${verificationCode}</strong></p>`
-        });
-        console.log('Verification email sent:', mailRes && mailRes.messageId);
+      if (!process.env.SMTP_HOST) {
+        console.warn('SMTP not configured, skipping sendMail');
+        throw new Error('SMTP not configured');
       }
+      
+      const { otpEmailTemplate } = require('./src/templates/otpEmail.cjs');
+      const mailRes = await transporter.sendMail({
+        from: `"ZeroCodeDB" <${process.env.SMTP_USER}>`,
+        to: email,
+        subject: 'Verify Your Email - ZeroCodeDB',
+        text: `Your verification code: ${otp}. This code will expire in 10 minutes.`,
+        html: otpEmailTemplate(otp)
+      });
+      
+      console.log('Verification email sent:', mailRes.messageId);
+      
+      res.status(201).json({
+        message: 'Registration successful',
+        tempToken,
+        requiresVerification: true
+      });
+      
     } catch (mailErr) {
-      console.error('Failed to send verification email:', mailErr && mailErr.message ? mailErr.message : mailErr);
-      // Do not fail registration if email fails; return created user but warn client
+      console.error('Failed to send verification email:', mailErr.message);
+      // Delete user if email fails - they can try again
+      await User.deleteOne({ _id: newUser._id });
+      return res.status(500).json({
+        error: {
+          code: 'EMAIL_DELIVERY_FAILED',
+          message: 'Could not send verification email. Please try again later.'
+        }
+      });
     }
-
-    const payload = { userId: newUser._id, email: newUser.email, username: newUser.username };
-    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '1d' });
-    const uobj = newUser.toObject();
-    delete uobj.password;
-    res.status(201).json({ message: 'User registered', token, user: uobj });
   } catch (err) {
     console.error('Register error:', err);
     res.status(500).json({ message: 'Server error during registration' });
@@ -856,36 +915,116 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // Verify email code
-app.post('/api/auth/verify', async (req, res) => {
+app.post('/api/auth/verify-otp', otpLimiter, async (req, res) => {
   try {
-    const { email, code } = req.body;
-    if (!email || !code) return res.status(400).json({ message: 'Email and code are required' });
-
-    const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
-    if (user.isVerified) return res.json({ message: 'Already verified', user: user.toObject() });
-
-    if (!user.emailVerificationCode || !user.emailVerificationExpires) {
-      return res.status(400).json({ message: 'No verification code set for this user' });
+    const { tempToken, otp } = req.body;
+    
+    if (!tempToken || !otp) {
+      return res.status(400).json({
+        error: {
+          code: 'MISSING_FIELDS',
+          message: 'Verification token and OTP are required'
+        }
+      });
     }
 
-    if (new Date() > new Date(user.emailVerificationExpires)) {
-      return res.status(400).json({ message: 'Verification code expired' });
+    // Verify and decode temp token
+    let decoded;
+    try {
+      decoded = verifyTempToken(tempToken, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({
+        error: {
+          code: 'INVALID_TOKEN',
+          message: 'Invalid or expired verification token'
+        }
+      });
     }
 
-    if (String(user.emailVerificationCode) !== String(code)) {
-      return res.status(400).json({ message: 'Invalid verification code' });
+    const user = await User.findById(decoded.userId);
+    if (!user) {
+      return res.status(404).json({
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found'
+        }
+      });
     }
 
+    if (user.isVerified) {
+      return res.status(400).json({
+        error: {
+          code: 'ALREADY_VERIFIED',
+          message: 'Email already verified'
+        }
+      });
+    }
+
+    // Check OTP expiry
+    if (!user.otpExpiresAt || new Date() > user.otpExpiresAt) {
+      return res.status(410).json({
+        error: {
+          code: 'OTP_EXPIRED',
+          message: 'Verification code has expired. Please request a new one.'
+        }
+      });
+    }
+
+    // Check attempts
+    if (user.otpAttempts >= 5) {
+      return res.status(403).json({
+        error: {
+          code: 'MAX_ATTEMPTS',
+          message: 'Maximum verification attempts reached. Please request a new code.'
+        }
+      });
+    }
+
+    // Verify OTP
+    const isValid = verifyOTP(otp, user.otpHash, process.env.OTP_SECRET);
+    
+    if (!isValid) {
+      user.otpAttempts += 1;
+      await user.save();
+      
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_OTP',
+          message: 'Invalid verification code',
+          details: {
+            remainingAttempts: 5 - user.otpAttempts
+          }
+        }
+      });
+    }
+
+    // OTP is valid - mark as verified and clear OTP fields
     user.isVerified = true;
-    user.emailVerificationCode = null;
-    user.emailVerificationExpires = null;
+    user.otpHash = null;
+    user.otpExpiresAt = null;
+    user.otpAttempts = 0;
+    user.otpResendCount = 0;
+    user.lastResendAt = null;
     await user.save();
 
-    const uobj = user.toObject();
-    delete uobj.password;
-    res.json({ message: 'Email verified', user: uobj });
+    // Generate auth token
+    const authToken = generateAuthToken(
+      user._id,
+      user.username,
+      user.email,
+      process.env.JWT_SECRET
+    );
+
+    // Send success response with auth token
+    const userObj = user.toObject();
+    delete userObj.password;
+    delete userObj.otpHash;
+    
+    res.json({
+      message: 'Email verified successfully',
+      token: authToken,
+      user: userObj
+    });
   } catch (err) {
     console.error('Verify code error:', err);
     res.status(500).json({ message: 'Server error during verification' });
@@ -893,40 +1032,117 @@ app.post('/api/auth/verify', async (req, res) => {
 });
 
 // Resend verification code
-app.post('/api/auth/resend', async (req, res) => {
+app.post('/api/auth/resend-otp', resendLimiter, async (req, res) => {
   try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ message: 'Email is required' });
-
-    const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    if (user.isVerified) return res.status(400).json({ message: 'User already verified' });
-
-    // generate new code
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expires = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24h
-    user.emailVerificationCode = verificationCode;
-    user.emailVerificationExpires = expires;
-    await user.save();
-
-    try {
-      if (!process.env.SMTP_HOST) console.warn('SMTP not configured, skipping sendMail (resend)');
-      else {
-        const mailRes = await transporter.sendMail({
-          from: `"ZeroCodeDB" <${process.env.SMTP_USER}>`,
-          to: email,
-          subject: 'Your verification code',
-          text: `Your verification code: ${verificationCode}`,
-          html: `<p>Your verification code: <strong>${verificationCode}</strong></p>`
-        });
-        console.log('Resend verification email sent:', mailRes && mailRes.messageId);
-      }
-    } catch (mailErr) {
-      console.error('Failed to resend verification email:', mailErr && mailErr.message ? mailErr.message : mailErr);
-      // non-fatal
+    const { tempToken } = req.body;
+    if (!tempToken) {
+      return res.status(400).json({
+        error: {
+          code: 'MISSING_TOKEN',
+          message: 'Verification token is required'
+        }
+      });
     }
 
-    res.json({ message: 'Verification code resent (if SMTP configured)' });
+    // Verify temp token
+    let decoded;
+    try {
+      decoded = verifyTempToken(tempToken, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({
+        error: {
+          code: 'INVALID_TOKEN',
+          message: 'Invalid or expired verification token'
+        }
+      });
+    }
+
+    const user = await User.findById(decoded.userId);
+    if (!user) {
+      return res.status(404).json({
+        error: {
+          code: 'USER_NOT_FOUND',
+          message: 'User not found'
+        }
+      });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({
+        error: {
+          code: 'ALREADY_VERIFIED',
+          message: 'Email already verified'
+        }
+      });
+    }
+
+    // Check resend limits
+    if (user.otpResendCount >= 5) {
+      return res.status(403).json({
+        error: {
+          code: 'MAX_RESENDS',
+          message: 'Maximum resend attempts reached. Please try registering again.'
+        }
+      });
+    }
+
+    // Check cooldown (60 seconds between resends)
+    if (user.lastResendAt && Date.now() - user.lastResendAt.getTime() < 60000) {
+      return res.status(429).json({
+        error: {
+          code: 'RESEND_COOLDOWN',
+          message: 'Please wait before requesting another code',
+          details: {
+            retryAfter: Math.ceil((user.lastResendAt.getTime() + 60000 - Date.now()) / 1000)
+          }
+        }
+      });
+    }
+
+    // Generate new OTP
+    const otp = generateOTP();
+    const otpHash = hashOTP(otp, process.env.OTP_SECRET);
+    
+    user.otpHash = otpHash;
+    user.otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    user.otpAttempts = 0;
+    user.otpResendCount += 1;
+    user.lastResendAt = new Date();
+    
+    try {
+      if (!process.env.SMTP_HOST) {
+        throw new Error('SMTP not configured');
+      }
+
+      const { otpEmailTemplate } = require('./src/templates/otpEmail.cjs');
+      const mailRes = await transporter.sendMail({
+        from: `"ZeroCodeDB" <${process.env.SMTP_USER}>`,
+        to: user.email,
+        subject: 'Your New Verification Code - ZeroCodeDB',
+        text: `Your new verification code: ${otp}. This code will expire in 10 minutes.`,
+        html: otpEmailTemplate(otp)
+      });
+
+      await user.save();
+      console.log('Resend verification email sent:', mailRes.messageId);
+
+      res.json({
+        message: 'New verification code sent',
+        details: {
+          remainingResends: 5 - user.otpResendCount,
+          expiresIn: '10 minutes'
+        }
+      });
+
+    } catch (mailErr) {
+      console.error('Failed to send verification email:', mailErr.message);
+      return res.status(500).json({
+        error: {
+          code: 'EMAIL_DELIVERY_FAILED',
+          message: 'Could not send verification email. Please try again later.'
+        }
+      });
+    }
   } catch (err) {
     console.error('Resend code error:', err);
     res.status(500).json({ message: 'Server error during resend' });
