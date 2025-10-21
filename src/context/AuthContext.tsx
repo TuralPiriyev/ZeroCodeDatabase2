@@ -139,6 +139,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         };
         
         setUser(userData);
+        // store email for verification page in case navigation/state is lost
+        if (response.data.user && response.data.user.email) {
+          try { localStorage.setItem('pendingVerificationEmail', response.data.user.email); } catch (e) { /* ignore */ }
+        }
         return true;
       }
       return false;

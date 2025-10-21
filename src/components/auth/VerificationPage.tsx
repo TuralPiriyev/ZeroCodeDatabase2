@@ -4,7 +4,6 @@ import { useAuth } from '../../context/AuthContext';
 import {
   Database,
   Shield,
-  CheckCircle,
   ArrowRight,
   AlertCircle
 } from 'lucide-react';
@@ -27,6 +26,13 @@ export const VerificationPage: React.FC = () => {
     else if (getCurrentUserEmail) {
       const stored = getCurrentUserEmail();
       if (stored) setEmailToVerify(stored);
+    }
+    else {
+      // fallback to pendingVerificationEmail stored at registration
+      try {
+        const pending = localStorage.getItem('pendingVerificationEmail');
+        if (pending) setEmailToVerify(pending);
+      } catch (e) { /* ignore */ }
     }
   }, [searchParams, getCurrentUserEmail]);
 
