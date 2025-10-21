@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../utils/api';
-import axios from 'axios';
 // Subscription plan types
 export type SubscriptionPlan = 'free' | 'pro' | 'ultimate';
 
@@ -158,11 +157,49 @@ useEffect(() => {
     // yalnız data fetch et, redirect etmə
     (async () => {
       try {
-        const { data } = await api.get('/subscription/status');
-        setCurrentPlan(data.plan.toLowerCase() as SubscriptionPlan);
-        setExpiresAt(data.expiresAt ? new Date(data.expiresAt) : null);
+        // Attempt to fetch subscription status. If we get a 401 (unauthenticated)
+        // fall back to the free plan immediately. For other transient errors
+        // (502/503) retry once before falling back.
+        let response = null;
+        try {
+          response = await api.get('/subscription/status');
+        } catch (firstErr: any) {
+          // If unauthenticated, do not retry
+          const status = firstErr?.response?.status;
+          if (status === 401) {
+            console.debug('Subscription status returned 401; treating user as unauthenticated and using free plan');
+            setCurrentPlan('free');
+            setExpiresAt(null);
+            setLoading(false);
+            return;
+          }
+          // Retry once for transient upstream errors
+          console.warn('Subscription status fetch failed, retrying once...', firstErr && (firstErr.message || firstErr));
+          try {
+            response = await api.get('/subscription/status');
+          } catch (secondErr: any) {
+            console.error('Subscription status fetch failed twice; falling back to free plan', secondErr && (secondErr.message || secondErr));
+            setCurrentPlan('free');
+            setExpiresAt(null);
+            setLoading(false);
+            return;
+          }
+        }
+
+        const data = response && response.data ? response.data : null;
+        if (data && data.plan) {
+          setCurrentPlan(data.plan.toLowerCase() as SubscriptionPlan);
+          setExpiresAt(data.expiresAt ? new Date(data.expiresAt) : null);
+        } else {
+          // fallback to free plan when subscription endpoint is unavailable
+          console.warn('Subscription data missing or invalid, falling back to free plan');
+          setCurrentPlan('free');
+          setExpiresAt(null);
+        }
       } catch (err) {
-        console.error('Failed to fetch subscription:', err);
+        console.error('Failed to fetch subscription (unexpected):', (err as any)?.message || err);
+        setCurrentPlan('free');
+        setExpiresAt(null);
       } finally {
         setLoading(false);
       }

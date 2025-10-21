@@ -120,26 +120,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const register = async (userData: { username: string; email: string; password: string; fullName: string; phone: string }): Promise<{ success: boolean; tempToken?: string }> => {
+  const register = async (userData: { username: string; email: string; password: string; fullName: string; phone: string }): Promise<{ success: boolean; tempToken?: string; error?: { code?: string; message?: string } }> => {
     try {
       setIsLoading(true);
       setAuthError(null);
-      const response = await api.post('/auth/register', {
-        ...userData
-      });
-      
-      if (response.data.tempToken) {
+      const response = await api.post('/auth/register', { ...userData });
+
+      if (response && response.data && response.data.tempToken) {
         localStorage.setItem('pendingVerificationEmail', userData.email);
-        return {
-          success: true,
-          tempToken: response.data.tempToken
-        };
+        return { success: true, tempToken: response.data.tempToken };
       }
       return { success: false };
-    } catch (error) {
-      console.error('Registration failed:', error);
-      setAuthError('Registration failed. Please try again.');
-      return { success: false };
+    } catch (err) {
+      console.error('Registration failed:', err);
+      const e = err as any;
+      // Prefer structured server error messages if present
+      const serverError = e?.response?.data?.error;
+      const message = serverError?.message || e?.response?.data?.message || e?.message || 'Registration failed. Please try again.';
+      const code = serverError?.code || undefined;
+
+      setAuthError(String(message));
+
+      return { success: false, tempToken: undefined, error: { code, message } };
     } finally {
       setIsLoading(false);
     }
