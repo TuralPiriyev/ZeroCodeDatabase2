@@ -178,7 +178,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             className="text-xs text-blue-600 hover:underline"
                           >Copy</button>
                         </div>
-                        <pre className="text-xs mt-1 whitespace-pre-wrap">{connectionInfo.connectionString || JSON.stringify(connectionInfo)}</pre>
+                        <pre className="text-xs mt-1 whitespace-pre-wrap">{connectionInfo.connectionString ? connectionInfo.connectionString : (connectionInfo.message || '')}</pre>
+                        {connectionInfo.configured === false && (
+                          <div className="mt-2 text-xs text-gray-500">(Demo placeholders shown — CPS not configured on this host)</div>
+                        )}
                       </div>
 
                       {/* Examples */}
