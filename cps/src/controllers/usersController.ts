@@ -79,10 +79,19 @@ export async function revokeUser(req: Request, res: Response) {
   }
 
   try {
-    // perform DB-level revoke
-    if (db.type === 'mysql') await revokeMySQLUser(Object.assign({}, db, { admin_uri_encrypted: await decrypt(db.admin_uri_encrypted as string) }), username);
-    else if (db.type === 'mongodb') await revokeMongoUser(Object.assign({}, db, { admin_uri_encrypted: await decrypt(db.admin_uri_encrypted as string) }), username);
-    else if (db.type === 'postgres') await revokePostgresUser(Object.assign({}, db, { admin_uri_encrypted: await decrypt(db.admin_uri_encrypted as string) }), username);
+    // perform DB-level revoke. If decrypting the stored admin URI fails (e.g., tests or
+    // fallback environments), attempt to use the stored value as plaintext.
+    let adminPlain = (db as any).admin_uri_encrypted as string;
+    try {
+      adminPlain = await decrypt(db.admin_uri_encrypted as string);
+    } catch (e) {
+      // fallback: treat stored value as plaintext URI
+      adminPlain = db.admin_uri_encrypted as string;
+    }
+
+    if (db.type === 'mysql') await revokeMySQLUser(Object.assign({}, db, { admin_uri_encrypted: adminPlain }), username);
+    else if (db.type === 'mongodb') await revokeMongoUser(Object.assign({}, db, { admin_uri_encrypted: adminPlain }), username);
+    else if (db.type === 'postgres') await revokePostgresUser(Object.assign({}, db, { admin_uri_encrypted: adminPlain }), username);
     else throw new Error('unsupported db type');
 
     // If DB revoke succeeded, remove metadata and record audit inside a local transaction

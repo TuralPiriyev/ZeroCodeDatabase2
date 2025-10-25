@@ -1,5 +1,6 @@
 import * as storage from '../src/services/storage';
 import * as usersController from '../src/controllers/usersController';
+import { encrypt } from '../src/utils/crypto';
 
 jest.mock('../src/services/provisioning/mysql', () => ({
   provisionMySQLUser: jest.fn(async () => ({ username: 'u1', password: 'p1', connectionString: 'c1', expiresAt: null })),
@@ -25,8 +26,9 @@ describe('usersController atomic flows (unit)', () => {
   });
 
   test('provision -> revoke sequence updates metadata and audit', async () => {
-    // create a database entry in storage
-    const db = storage.addDatabase({ name: 'testdb', type: 'mysql', host: '127.0.0.1', port: 3306, admin_uri_encrypted: '' as any });
+  // create a database entry in storage with an encrypted admin URI
+  const adminEncrypted = await encrypt('mysql://root:pass@127.0.0.1:3306');
+  const db = storage.addDatabase({ name: 'testdb', type: 'mysql', host: '127.0.0.1', port: 3306, admin_uri_encrypted: adminEncrypted as any });
     const dbList = storage.listDatabases();
     const dbId = dbList[0].id;
 
