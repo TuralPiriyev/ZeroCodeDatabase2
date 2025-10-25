@@ -553,7 +553,18 @@ app.get('/api/cps/connection', authenticate, async (req, res) => {
     const cpsDbId = process.env.CPS_DEFAULT_DB_ID;
     const cpsBase = process.env.CPS_BASE_URL || '';
     if (!cpsAdminKey || !cpsDbId) {
-      return res.status(500).json({ error: 'CPS not configured (CPS_ADMIN_API_KEY or CPS_DEFAULT_DB_ID missing)' });
+      // Return a friendly non-500 response so frontend doesn't flood console with errors.
+      console.warn('CPS proxy endpoint called but CPS_ADMIN_API_KEY or CPS_DEFAULT_DB_ID is not configured. Returning demo placeholders.');
+      return res.status(200).json({
+        configured: false,
+        message: 'CPS not configured on this host. Set CPS_ADMIN_API_KEY and CPS_DEFAULT_DB_ID to enable live provisioning.',
+        connectionString: '',
+        examples: {
+          php_pdo_mysql: "<?php\n// Replace placeholders with real values from your DB admin\n$dsn = 'mysql:host=DB_HOST;port=3306;dbname=DB_NAME;charset=utf8mb4';\n$user = 'DB_USER';\n$pass = 'DB_PASS';\ntry { $pdo = new PDO($dsn,$user,$pass); var_dump($pdo->query('SELECT NOW()')->fetch()); } catch (PDOException $e) { echo $e->getMessage(); }\n?>",
+          php_mongodb: "<?php\n// Replace placeholders with real values\nrequire 'vendor/autoload.php';\n$uri = 'mongodb://DB_USER:DB_PASS@DB_HOST:27017/DB_NAME';\n$manager = new MongoDB\\Driver\\Manager($uri);\n$cmd = new MongoDB\\Driver\\Command(['ping' => 1]);\nprint_r($manager->executeCommand('admin',$cmd)->toArray());\n?>",
+          node_mysql: "// Replace placeholders with real values\nconst mysql = require('mysql2/promise');\n(async ()=>{ const conn = await mysql.createConnection({host:'DB_HOST',user:'DB_USER',password:'DB_PASS',database:'DB_NAME',port:3306}); const [rows] = await conn.query('SELECT NOW()'); console.log(rows); await conn.end(); })();"
+        }
+      });
     }
 
     // username prefix includes user id so provisioned username is unique per-user
