@@ -10,18 +10,28 @@ const generateOTP = () => {
 };
 
 const hashOTP = (otp, secret) => {
-    return crypto.createHmac('sha256', secret)
-        .update(otp)
+    if (!secret) {
+        throw new Error('hashOTP: secret is required and must be a non-empty string');
+    }
+    return crypto.createHmac('sha256', String(secret))
+        .update(String(otp))
         .digest('hex');
 };
 
 const verifyOTP = (providedOtp, storedHash, secret) => {
+    if (!secret) throw new Error('verifyOTP: secret is required');
+    if (!storedHash) return false;
     const providedHash = hashOTP(providedOtp, secret);
     // Use constant-time comparison to prevent timing attacks
-    return crypto.timingSafeEqual(
-        Buffer.from(providedHash, 'hex'),
-        Buffer.from(storedHash, 'hex')
-    );
+    try {
+        return crypto.timingSafeEqual(
+            Buffer.from(providedHash, 'hex'),
+            Buffer.from(storedHash, 'hex')
+        );
+    } catch (e) {
+        // If buffers differ in length or format, fail safely
+        return false;
+    }
 };
 
 const generateTempToken = (userId, secret, expiresIn = '15m') => {

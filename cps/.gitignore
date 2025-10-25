@@ -1,0 +1,5 @@
+.env
+cps_metadata.db
+node_modules/
+dist/
+*.log

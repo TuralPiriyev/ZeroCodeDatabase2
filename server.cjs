@@ -7,6 +7,8 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+// Load environment variables as early as possible so modules that read process.env work correctly
+dotenv.config();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
@@ -68,6 +70,19 @@ const PAYPAL_SECRET = process.env.PAYPAL_SECRET;
 const PAYPAL_PLAN_PRO_ID = process.env.PAYPAL_PLAN_PRO_ID;
 const PAYPAL_PLAN_ULTIMATE_ID = process.env.PAYPAL_PLAN_ULTIMATE_ID;
 const PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID;
+
+// Ensure OTP secret is present. In production, require it. In development, auto-generate a temporary one and log a warning.
+if (!process.env.OTP_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('FATAL: OTP_SECRET is not set in environment. Aborting start to avoid insecure defaults.');
+    process.exit(1);
+  } else {
+    // Generate a temporary OTP secret to allow local/dev runs
+    const tempSecret = crypto.randomBytes(32).toString('hex');
+    process.env.OTP_SECRET = tempSecret;
+    console.warn('OTP_SECRET not found in environment. Using a generated temporary OTP_SECRET for development. Set OTP_SECRET in production.');
+  }
+}
 
 // Express setup
 const app = express();
@@ -1433,11 +1448,19 @@ const transporter = nodemailer.createTransport({
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
 });
 
+// Add a socket timeout to the transport to fail faster on unreachable hosts
 if (process.env.SMTP_HOST) {
+  transporter.set('socketTimeout', 10_000); // 10s
   transporter.verify((err) => {
-    if (err) console.error('SMTP verify error:', err);
-    else console.log('✅ SMTP ready');
+    if (err) {
+      console.error('SMTP verify error:', err && err.message ? err.message : err);
+      console.warn('SMTP appears unavailable. Email sending may fail; registration will revert user creation on email errors.');
+    } else {
+      console.log('✅ SMTP ready');
+    }
   });
+} else {
+  console.warn('SMTP_HOST not set; email sending is disabled. Registration will skip sending emails and return an error to clients.');
 }
 
 
