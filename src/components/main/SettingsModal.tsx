@@ -173,12 +173,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                           <div className="text-xs text-gray-500">Connection string</div>
                           <button
                             onClick={() => {
-                              try { navigator.clipboard.writeText(connectionInfo.connectionString || ''); } catch (e) {}
+                              try { if (connectionInfo.connectionString) navigator.clipboard.writeText(connectionInfo.connectionString); } catch (e) {}
                             }}
-                            className="text-xs text-blue-600 hover:underline"
-                          >Copy</button>
+                            disabled={!connectionInfo.connectionString}
+                            title={connectionInfo.connectionString ? 'Copy connection string' : 'No connection string available'}
+                            className={"text-xs " + (connectionInfo.connectionString ? 'text-blue-600 hover:underline' : 'text-gray-400 cursor-not-allowed')}
+                          >
+                            Copy
+                          </button>
                         </div>
-                        <pre className="text-xs mt-1 whitespace-pre-wrap">{connectionInfo.connectionString ? connectionInfo.connectionString : (connectionInfo.message || '')}</pre>
+                        <pre className={"text-xs mt-1 whitespace-pre-wrap " + (connectionInfo.connectionString ? '' : 'select-none text-gray-500')}>{connectionInfo.connectionString ? connectionInfo.connectionString : (connectionInfo.message || '')}</pre>
                         {connectionInfo.configured === false && (
                           <div className="mt-2 text-xs text-gray-500">(Demo placeholders shown — CPS not configured on this host)</div>
                         )}
