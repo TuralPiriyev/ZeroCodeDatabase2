@@ -542,6 +542,46 @@ app.use('/api/portfolios', authenticate, portfolioRoutes);
 app.use('/api/workspaces', authenticate, workspaceRoutes);
 app.use('/api/schemas', authenticate, schemaRoutes);
 
+// CPS helper endpoint: provision a per-user one-time connection via CPS admin API
+// Requires these env vars to be set in production/deploy:
+// CPS_ADMIN_API_KEY - admin API key for CPS
+// CPS_DEFAULT_DB_ID - the dbId in CPS to provision users for
+// CPS_BASE_URL - optional base URL for CPS (defaults to same host)
+app.get('/api/cps/connection', authenticate, async (req, res) => {
+  try {
+    const cpsAdminKey = process.env.CPS_ADMIN_API_KEY;
+    const cpsDbId = process.env.CPS_DEFAULT_DB_ID;
+    const cpsBase = process.env.CPS_BASE_URL || '';
+    if (!cpsAdminKey || !cpsDbId) {
+      return res.status(500).json({ error: 'CPS not configured (CPS_ADMIN_API_KEY or CPS_DEFAULT_DB_ID missing)' });
+    }
+
+    // username prefix includes user id so provisioned username is unique per-user
+    const usernamePrefix = `user_${req.userId || (req.user && req.user.userId) || 'anon'}`;
+
+    const url = (cpsBase || '') + `/api/databases/${encodeURIComponent(cpsDbId)}/provision-user`;
+    const body = { usernamePrefix, ttl: 3600 };
+
+    const resp = await axios({
+      method: 'post',
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': cpsAdminKey
+      },
+      data: body,
+      timeout: 10000
+    });
+
+    // Forward CPS response back to the frontend (one-time connection info)
+    return res.status(200).json(resp.data);
+  } catch (err) {
+    console.error('CPS connection provisioning error:', err && err.response ? err.response.data || err.response.statusText : err.message || err);
+    const msg = err && err.response && err.response.data ? err.response.data : { message: (err && err.message) || 'Unknown error' };
+    return res.status(502).json({ error: 'CPS provisioning failed', details: msg });
+  }
+});
+
 // Server-side fallback to create subscription and redirect to PayPal approval
 app.get('/api/pay/fallback-subscription', async (req, res) => {
   try {
