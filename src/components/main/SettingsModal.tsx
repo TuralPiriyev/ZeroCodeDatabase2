@@ -22,6 +22,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connLoading, setConnLoading] = useState(false);
+  const [connectionInfo, setConnectionInfo] = useState<any | null>(null);
+  const [connError, setConnError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -44,6 +47,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       setError(err.response?.data?.message || 'Failed to fetch user settings');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchConnectionInfo = async () => {
+    setConnLoading(true);
+    setConnError(null);
+    try {
+      // Try to fetch a per-user connection string from CPS API
+      const res = await api.get('/cps/connection');
+      setConnectionInfo(res.data);
+    } catch (err: any) {
+      // If endpoint is not available, show helpful message
+      setConnError(err.response?.data?.message || 'Connection info not available');
+      setConnectionInfo(null);
+    } finally {
+      setConnLoading(false);
     }
   };
 
@@ -124,6 +143,82 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             </div>
           ) : userSettings ? (
             <div className="space-y-6">
+              {/* Connection Panel */}
+              <div className="p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="font-medium text-gray-900">Your Connection</h3>
+                    <p className="text-sm text-gray-500 mt-1">One-time connection string and quick usage examples</p>
+                  </div>
+                  <div className="ml-4">
+                    <button
+                      onClick={fetchConnectionInfo}
+                      disabled={connLoading}
+                      className="text-sm px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
+                    >
+                      {connLoading ? 'Fetching...' : 'Fetch'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 max-h-[48vh] overflow-y-auto pr-2">
+                  {connLoading ? (
+                    <div className="text-sm text-gray-600">Loading connection...</div>
+                  ) : connError ? (
+                    <div className="bg-yellow-50 border border-yellow-100 p-3 rounded text-sm text-yellow-800">{connError}</div>
+                  ) : connectionInfo ? (
+                    <div className="space-y-3">
+                      <div className="bg-gray-50 border border-gray-100 rounded p-3 text-sm break-words">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-gray-500">Connection string</div>
+                          <button
+                            onClick={() => {
+                              try { navigator.clipboard.writeText(connectionInfo.connectionString || ''); } catch (e) {}
+                            }}
+                            className="text-xs text-blue-600 hover:underline"
+                          >Copy</button>
+                        </div>
+                        <pre className="text-xs mt-1 whitespace-pre-wrap">{connectionInfo.connectionString || JSON.stringify(connectionInfo)}</pre>
+                      </div>
+
+                      {/* Examples */}
+                      <div className="space-y-2">
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm font-medium">PHP (PDO) — MySQL</div>
+                            <button className="text-xs text-blue-600" onClick={() => { try { navigator.clipboard.writeText(connectionInfo.examples?.php_pdo_mysql || ''); } catch (e){} }}>
+                              Copy
+                            </button>
+                          </div>
+                          <pre className="mt-1 text-xs bg-gray-900 text-white p-3 rounded overflow-x-auto">{connectionInfo.examples?.php_pdo_mysql || `// Example not available. Use Fetch to get a one-time connection string.`}</pre>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm font-medium">PHP — MongoDB</div>
+                            <button className="text-xs text-blue-600" onClick={() => { try { navigator.clipboard.writeText(connectionInfo.examples?.php_mongodb || ''); } catch (e){} }}>
+                              Copy
+                            </button>
+                          </div>
+                          <pre className="mt-1 text-xs bg-gray-900 text-white p-3 rounded overflow-x-auto">{connectionInfo.examples?.php_mongodb || `// Example not available. Use Fetch to get a one-time connection string.`}</pre>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm font-medium">Node.js — mysql2</div>
+                            <button className="text-xs text-blue-600" onClick={() => { try { navigator.clipboard.writeText(connectionInfo.examples?.node_mysql || ''); } catch (e){} }}>
+                              Copy
+                            </button>
+                          </div>
+                          <pre className="mt-1 text-xs bg-gray-900 text-white p-3 rounded overflow-x-auto">{connectionInfo.examples?.node_mysql || `// Example not available. Use Fetch to get a one-time connection string.`}</pre>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500">No connection info fetched yet. Click <span className="font-medium">Fetch</span> to request a per-user connection from the server.</div>
+                  )}
+                </div>
+              </div>
               {/* Username */}
               <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
                 <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
