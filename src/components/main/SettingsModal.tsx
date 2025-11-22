@@ -25,6 +25,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [connLoading, setConnLoading] = useState(false);
   const [connectionInfo, setConnectionInfo] = useState<any | null>(null);
   const [connError, setConnError] = useState<string | null>(null);
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+
+  const showCopyNotice = (msg: string) => {
+    setCopyNotice(msg);
+    setTimeout(() => setCopyNotice(null), 3000);
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -56,10 +62,32 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     try {
       // Try to fetch a per-user connection string from CPS API
       const res = await api.get('/cps/connection');
-      setConnectionInfo(res.data);
+
+      // Validate response shape and avoid exposing raw objects
+      const data = res?.data || {};
+      if (typeof data !== 'object') {
+        setConnError('Unexpected response from server');
+        setConnectionInfo(null);
+      } else {
+        // prefer explicit connectionString; if missing, render demo message
+        const safe = {
+          configured: !!data.configured,
+          connectionString: typeof data.connectionString === 'string' ? data.connectionString : '',
+          message: typeof data.message === 'string' ? data.message : '',
+          examples: typeof data.examples === 'object' && data.examples ? data.examples : {}
+        };
+        setConnectionInfo(safe);
+      }
     } catch (err: any) {
-      // If endpoint is not available, show helpful message
-      setConnError(err.response?.data?.message || 'Connection info not available');
+      // Quietly handle errors: show friendly message, don't dump server error to console
+      const respMsg = err?.response?.data?.message;
+      if (respMsg && typeof respMsg === 'string') {
+        setConnError(respMsg);
+      } else if (err?.response?.status) {
+        setConnError(`Server returned ${err.response.status}. Try again later.`);
+      } else {
+        setConnError('Connection info not available');
+      }
       setConnectionInfo(null);
     } finally {
       setConnLoading(false);
@@ -173,9 +201,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                           <div className="text-xs text-gray-500">Connection string</div>
                           <button
                             onClick={() => {
-                              try { if (connectionInfo.connectionString) navigator.clipboard.writeText(connectionInfo.connectionString); } catch (e) {}
+                              try {
+                                if (connectionInfo.connectionString) {
+                                  navigator.clipboard.writeText(connectionInfo.connectionString);
+                                  showCopyNotice('Connection string copied');
+                                } else {
+                                  showCopyNotice('No connection string available. CPS not configured.');
+                                }
+                              } catch (e) {
+                                showCopyNotice('Copy failed');
+                              }
                             }}
-                            disabled={!connectionInfo.connectionString}
+                            aria-disabled={!connectionInfo.connectionString}
                             title={connectionInfo.connectionString ? 'Copy connection string' : 'No connection string available'}
                             className={"text-xs " + (connectionInfo.connectionString ? 'text-blue-600 hover:underline' : 'text-gray-400 cursor-not-allowed')}
                           >
@@ -193,7 +230,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         <div>
                           <div className="flex items-center justify-between">
                             <div className="text-sm font-medium">PHP (PDO) — MySQL</div>
-                            <button className="text-xs text-blue-600" onClick={() => { try { navigator.clipboard.writeText(connectionInfo.examples?.php_pdo_mysql || ''); } catch (e){} }}>
+                            <button className="text-xs text-blue-600" onClick={() => {
+                              try {
+                                if (connectionInfo.examples?.php_pdo_mysql) {
+                                  navigator.clipboard.writeText(connectionInfo.examples.php_pdo_mysql);
+                                  showCopyNotice('Example copied');
+                                } else {
+                                  showCopyNotice('Example not available. Fetch a connection first.');
+                                }
+                              } catch (e) { showCopyNotice('Copy failed'); }
+                            }}>
                               Copy
                             </button>
                           </div>
@@ -203,7 +249,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         <div>
                           <div className="flex items-center justify-between">
                             <div className="text-sm font-medium">PHP — MongoDB</div>
-                            <button className="text-xs text-blue-600" onClick={() => { try { navigator.clipboard.writeText(connectionInfo.examples?.php_mongodb || ''); } catch (e){} }}>
+                            <button className="text-xs text-blue-600" onClick={() => {
+                              try {
+                                if (connectionInfo.examples?.php_mongodb) {
+                                  navigator.clipboard.writeText(connectionInfo.examples.php_mongodb);
+                                  showCopyNotice('Example copied');
+                                } else {
+                                  showCopyNotice('Example not available. Fetch a connection first.');
+                                }
+                              } catch (e) { showCopyNotice('Copy failed'); }
+                            }}>
                               Copy
                             </button>
                           </div>
@@ -213,13 +268,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         <div>
                           <div className="flex items-center justify-between">
                             <div className="text-sm font-medium">Node.js — mysql2</div>
-                            <button className="text-xs text-blue-600" onClick={() => { try { navigator.clipboard.writeText(connectionInfo.examples?.node_mysql || ''); } catch (e){} }}>
+                            <button className="text-xs text-blue-600" onClick={() => {
+                              try {
+                                if (connectionInfo.examples?.node_mysql) {
+                                  navigator.clipboard.writeText(connectionInfo.examples.node_mysql);
+                                  showCopyNotice('Example copied');
+                                } else {
+                                  showCopyNotice('Example not available. Fetch a connection first.');
+                                }
+                              } catch (e) { showCopyNotice('Copy failed'); }
+                            }}>
                               Copy
                             </button>
                           </div>
                           <pre className="mt-1 text-xs bg-gray-900 text-white p-3 rounded overflow-x-auto">{connectionInfo.examples?.node_mysql || `// Example not available. Use Fetch to get a one-time connection string.`}</pre>
                         </div>
                       </div>
+                      {copyNotice && (
+                        <div className="mt-2 text-center text-xs text-gray-700">{copyNotice}</div>
+                      )}
                     </div>
                   ) : (
                     <div className="text-sm text-gray-500">No connection info fetched yet. Click <span className="font-medium">Fetch</span> to request a per-user connection from the server.</div>
