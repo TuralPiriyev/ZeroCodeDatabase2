@@ -230,20 +230,31 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                         <div>
                           <div className="flex items-center justify-between">
                             <div className="text-sm font-medium">PHP (PDO) — MySQL</div>
-                            <button className="text-xs text-blue-600" onClick={() => {
-                              try {
-                                if (connectionInfo.examples?.php_pdo_mysql) {
-                                  navigator.clipboard.writeText(connectionInfo.examples.php_pdo_mysql);
-                                  showCopyNotice('Example copied');
-                                } else {
-                                  showCopyNotice('Example not available. Fetch a connection first.');
-                                }
-                              } catch (e) { showCopyNotice('Copy failed'); }
-                            }}>
-                              Copy
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button className="text-xs text-blue-600" onClick={() => {
+                                try {
+                                  const text = connectionInfo.snippets?.php?.env || connectionInfo.examples?.php_pdo_mysql || '';
+                                  if (text) { navigator.clipboard.writeText(text); showCopyNotice('Copied .env'); }
+                                  else showCopyNotice('Example not available. Fetch a connection first.');
+                                } catch (e) { showCopyNotice('Copy failed'); }
+                              }}>
+                                Copy .env
+                              </button>
+                              <button className="text-xs text-blue-600" onClick={() => {
+                                try {
+                                  const code = connectionInfo.snippets?.php?.snippet || connectionInfo.examples?.php_pdo_mysql || '';
+                                  if (code) { navigator.clipboard.writeText(code); showCopyNotice('Snippet copied'); }
+                                  else showCopyNotice('Example not available. Fetch a connection first.');
+                                } catch (e) { showCopyNotice('Copy failed'); }
+                              }}>
+                                Copy snippet
+                              </button>
+                              <button className="text-xs text-blue-600" onClick={() => { window.open('/cps/snippets/mydb.php', '_blank'); }}>
+                                Download mydb.php
+                              </button>
+                            </div>
                           </div>
-                          <pre className="mt-1 text-xs bg-gray-900 text-white p-3 rounded overflow-x-auto">{connectionInfo.examples?.php_pdo_mysql || `// Example not available. Use Fetch to get a one-time connection string.`}</pre>
+                          <pre className="mt-1 text-xs bg-gray-900 text-white p-3 rounded overflow-x-auto">{connectionInfo.snippets?.php?.snippet || connectionInfo.examples?.php_pdo_mysql || `// Example not available. Use Fetch to get a one-time connection string.`}</pre>
                         </div>
 
                         <div>
@@ -251,12 +262,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             <div className="text-sm font-medium">PHP — MongoDB</div>
                             <button className="text-xs text-blue-600" onClick={() => {
                               try {
-                                if (connectionInfo.examples?.php_mongodb) {
-                                  navigator.clipboard.writeText(connectionInfo.examples.php_mongodb);
-                                  showCopyNotice('Example copied');
-                                } else {
-                                  showCopyNotice('Example not available. Fetch a connection first.');
-                                }
+                                const txt = connectionInfo.snippets?.mongo?.connectionCode || connectionInfo.examples?.php_mongodb || '';
+                                if (txt) { navigator.clipboard.writeText(txt); showCopyNotice('Example copied'); }
+                                else showCopyNotice('Example not available. Fetch a connection first.');
                               } catch (e) { showCopyNotice('Copy failed'); }
                             }}>
                               Copy
@@ -270,12 +278,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             <div className="text-sm font-medium">Node.js — mysql2</div>
                             <button className="text-xs text-blue-600" onClick={() => {
                               try {
-                                if (connectionInfo.examples?.node_mysql) {
-                                  navigator.clipboard.writeText(connectionInfo.examples.node_mysql);
-                                  showCopyNotice('Example copied');
-                                } else {
-                                  showCopyNotice('Example not available. Fetch a connection first.');
-                                }
+                                const txt = connectionInfo.snippets?.node?.connectionCode || connectionInfo.examples?.node_mysql || '';
+                                if (txt) { navigator.clipboard.writeText(txt); showCopyNotice('Example copied'); }
+                                else showCopyNotice('Example not available. Fetch a connection first.');
                               } catch (e) { showCopyNotice('Copy failed'); }
                             }}>
                               Copy

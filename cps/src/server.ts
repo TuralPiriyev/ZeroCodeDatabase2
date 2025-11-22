@@ -44,6 +44,17 @@ app.get('/api/metrics', require('./controllers/auditController').metrics);
 app.use('/cps/snippets', express.static(path.join(__dirname, '..', 'snippets')));
 app.use('/cps/frontend', express.static(path.join(__dirname, '..', 'frontend')));
 
+// Admin-only endpoint to download the mydb.php wrapper
+app.get('/api/snippets/mydb.php', requireAdmin, (req, res) => {
+  const file = path.join(__dirname, '..', 'snippets', 'mydb.php');
+  res.sendFile(file, err => {
+    if (err) {
+      console.error('Failed to send mydb.php:', err && err.message ? err.message : err);
+      res.status(500).send('Failed to retrieve snippet');
+    }
+  });
+});
+
 const port = process.env.PORT || 4000;
 app.listen(port, () => {
   console.log(`CPS server listening on ${port}`);

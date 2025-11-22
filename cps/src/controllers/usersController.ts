@@ -4,6 +4,7 @@ import { provisionMySQLUser, revokeMySQLUser, rotateMySQLUserPassword } from '..
 import { provisionMongoUser, revokeMongoUser, rotateMongoUserPassword } from '../services/provisioning/mongo';
 import { provisionPostgresUser, revokePostgresUser, rotatePostgresUserPassword } from '../services/provisioning/postgres';
 import * as storage from '../services/storage';
+import snippetsService from '../services/snippetsService';
 import { inc } from '../utils/metrics';
 
 function buildSnippets(type: string, connStr: string) {
@@ -52,14 +53,24 @@ export async function provisionUser(req: Request, res: Response) {
     return res.status(400).json({ error: 'Unsupported db type' });
   }
 
-  // store provisioned metadata
-  await storage.addProvisionedUser(dbId, result.username, result.password, JSON.stringify(roles || []), result.expiresAt);
+  // store provisioned metadata (encrypt password at rest)
+  const prov = await storage.addProvisionedUser(dbId, result.username, result.password, JSON.stringify(roles || []), result.expiresAt, 0);
   try { inc('provisions'); } catch {}
 
-  const snippets = buildSnippets(db.type, result.connectionString);
-  const instructions = `This connection string is one-time and will not be stored unhashed. Use it to connect within the TTL if provided.`;
+  // Generate language-specific snippets and a one-time token for the client
+  const { snippets, one_time_token } = snippetsService.generateSnippets(result.connectionString, result.username);
 
-  res.json({ connectionString: result.connectionString, expiresAt: result.expiresAt, instructions, snippets, username: result.username });
+  // Mark the provisioned user as revealed (so subsequent calls won't return plaintext password)
+  try {
+    storage.markProvisionedUserRevealed(result.username);
+  } catch (err) {
+    // non-fatal: we log but do not include sensitive data in response
+    console.warn('Failed to mark provisioned user revealed:', String(err));
+  }
+
+  const instructions = `This connection string and password are shown only once. Store them securely.`;
+
+  res.json({ configured: true, connectionString: result.connectionString, expiresAt: result.expiresAt, instructions, snippets, username: result.username, one_time_token });
 }
 
 export async function revokeUser(req: Request, res: Response) {

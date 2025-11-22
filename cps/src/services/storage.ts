@@ -43,6 +43,7 @@ if (SqliteDB) {
       db_id TEXT NOT NULL,
       username TEXT NOT NULL,
       encrypted_password TEXT NOT NULL,
+      revealed INTEGER DEFAULT 0,
       roles TEXT,
       created_at TEXT,
       expires_at TEXT
@@ -90,13 +91,13 @@ if (SqliteDB) {
       const row = db.prepare(`SELECT * FROM databases WHERE id = ?`).get(id);
       return row || null;
     },
-    async addProvisionedUser(db_id: string, username: string, plaintextPassword: string, roles?: string, expires_at?: string | null) {
+    async addProvisionedUser(db_id: string, username: string, plaintextPassword: string, roles?: string, expires_at?: string | null, revealed = 0) {
       const id = uuidv4();
       const created_at = new Date().toISOString();
       const encrypted_password = await encrypt(plaintextPassword);
       db.prepare(
-        `INSERT INTO provisioned_users (id,db_id,username,encrypted_password,roles,created_at,expires_at) VALUES (?,?,?,?,?,?,?)`
-      ).run(id, db_id, username, encrypted_password, roles || null, created_at, expires_at || null);
+        `INSERT INTO provisioned_users (id,db_id,username,encrypted_password,revealed,roles,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?)`
+      ).run(id, db_id, username, encrypted_password, revealed, roles || null, created_at, expires_at || null);
       return { id, db_id, username, created_at, expires_at } as ProvisionedUser;
     },
     getProvisionedUser(id: string) {
@@ -104,6 +105,11 @@ if (SqliteDB) {
     },
     getProvisionedUserByUsername(username: string) {
       return db.prepare(`SELECT * FROM provisioned_users WHERE username = ?`).get(username);
+    },
+    markProvisionedUserRevealed(username: string) {
+      const stmt = db.prepare(`UPDATE provisioned_users SET revealed = 1 WHERE username = ?`);
+      const info = stmt.run(username);
+      return info.changes > 0;
     },
     addAdmin(username: string, passwordHash: string, role = 'admin') {
       const id = uuidv4();
@@ -171,7 +177,7 @@ if (SqliteDB) {
     getDatabase(id: string) {
       return dbs.find(d => d.id === id) || null;
     },
-    async addProvisionedUser(db_id: string, username: string, plaintextPassword: string, roles?: string, expires_at?: string | null) {
+    async addProvisionedUser(db_id: string, username: string, plaintextPassword: string, roles?: string, expires_at?: string | null, revealed = 0) {
       const id = uuidv4();
       const created_at = new Date().toISOString();
       const encrypted_password = await encrypt(plaintextPassword);
@@ -202,6 +208,12 @@ if (SqliteDB) {
       const idx = provs.findIndex(p => p.username === username);
       if (idx === -1) return false;
       provs.splice(idx, 1);
+      return true;
+    },
+    markProvisionedUserRevealed(username: string) {
+      const p = provs.find(p => p.username === username);
+      if (!p) return false;
+      p.revealed = 1;
       return true;
     },
     async rotateProvisionedUserPassword(username: string, newPlaintext: string) {
@@ -238,7 +250,7 @@ if (SqliteDB) {
 export const addDatabase = (entry: Omit<DatabaseEntry, 'id' | 'created_at'>) => adapter.addDatabase(entry);
 export const listDatabases = (): DatabaseEntry[] => adapter.listDatabases();
 export const getDatabase = (id: string) => adapter.getDatabase(id);
-export const addProvisionedUser = (db_id: string, username: string, plaintextPassword: string, roles?: string, expires_at?: string | null) => adapter.addProvisionedUser(db_id, username, plaintextPassword, roles, expires_at);
+export const addProvisionedUser = (db_id: string, username: string, plaintextPassword: string, roles?: string, expires_at?: string | null, revealed = 0) => adapter.addProvisionedUser(db_id, username, plaintextPassword, roles, expires_at, revealed);
 export const getProvisionedUser = (id: string) => adapter.getProvisionedUser(id);
 export const getProvisionedUserByUsername = (username: string) => adapter.getProvisionedUserByUsername(username);
 export const addAdmin = (username: string, passwordHash: string, role = 'admin') => adapter.addAdmin(username, passwordHash, role);
@@ -250,3 +262,4 @@ export const updateEncryptedPassword = (username: string, encryptedPassword: str
 export const writeAudit = (action: string, db_id: string | null, username: string | null, actor: string | null, ip: string | null, details: any) => adapter.writeAudit(action, db_id, username, actor, ip, details);
 export const listAudit = (db_id?: string, limit = 100) => adapter.listAudit(db_id, limit);
 export const transaction = (fn: (...args: any[]) => any) => adapter.transaction(fn);
+export const markProvisionedUserRevealed = (username: string) => adapter.markProvisionedUserRevealed ? adapter.markProvisionedUserRevealed(username) : false;
