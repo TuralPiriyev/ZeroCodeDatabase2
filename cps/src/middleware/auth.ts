@@ -9,7 +9,7 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const provided = req.headers['x-api-key'] || req.query.api_key;
   if (apiKey && provided === apiKey) {
     // attach a lightweight system user
-    (req as any).user = { username: 'automation', role: 'admin' };
+    (req as any).user = { username: 'automation', role: 'admin', csrf: apiKey };
     return next();
   }
 
