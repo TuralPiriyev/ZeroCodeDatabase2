@@ -89,8 +89,16 @@ function listDatabases() {
 
 function findDatabase(dbId) {
   const all = loadDatabases();
-  if (!dbId) return all[0] || null;
-  return all.find(db => db.id === dbId) || null;
+  if (!all.length) return null;
+  if (!dbId) return all[0];
+  const match = all.find(db => db.id === dbId);
+  if (match) return match;
+  if (all.length === 1) {
+    console.warn(`[CPS_ADAPTER] Requested dbId "${dbId}" not found; falling back to the only configured database (${all[0].id}).`);
+    return all[0];
+  }
+  console.warn(`[CPS_ADAPTER] Requested dbId "${dbId}" not found among ${all.length} configured databases.`);
+  return null;
 }
 
 async function provisionConnection({ dbId, usernamePrefix, ttl }) {
