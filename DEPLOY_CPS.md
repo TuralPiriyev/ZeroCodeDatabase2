@@ -1,12 +1,13 @@
 # Deploying CPS integration (CPS_ADMIN_API_KEY + CPS_DEFAULT_DB_ID)
 
-This document shows how to add the required environment variables so the main site can request per-user connection strings from your CPS admin API. After adding the env vars, restart/redeploy the service and verify `/api/cps/connection` returns a live provisioning response.
+This document shows how to add the required environment variables so the main site can request per-user connection strings using the embedded CPS adapter. After adding the env vars and copying your `cps_metadata.db` file (generated via the CPS admin UI) into the app directory, restart/redeploy the service and verify `/api/cps/connection` returns a live provisioning response.
 
 Required environment variables
 
-- `CPS_ADMIN_API_KEY` — the server-side admin API key for your CPS admin API (keep secret).
-- `CPS_DEFAULT_DB_ID` — the database ID that the CPS admin should provision for end users by default.
-- Optional: `CPS_BASE_URL` — if your CPS admin is hosted on a different base URL than the site.
+- `CPS_ADMIN_API_KEY` — flag indicating CPS integration is configured (also re-used by the legacy admin UI). Falls back to `ADMIN_API_KEY` for local dev.
+- `CPS_DEFAULT_DB_ID` — the database ID that the CPS admin should provision for end users by default. Set to `auto` to let the server pick the first configured DB from `cps_metadata.db`.
+
+> **Note:** `cps_metadata.db` (or the path defined by `CPS_SQLITE_PATH`) must be deployed alongside the server so the adapter can read DB definitions and encrypted admin URIs. You can generate this file by running `npm run dev` inside the `cps/` folder locally, adding databases in the minimal admin UI, then copying the resulting SQLite file to your deploy artifact.
 
 Important: set these on the server where `server.cjs` runs. Never embed the admin key into frontend bundles.
 
@@ -22,8 +23,7 @@ services:
     image: your-image:latest
     environment:
       - CPS_ADMIN_API_KEY=sk_live_XXXXXXXXXXXXXXXX
-      - CPS_DEFAULT_DB_ID=default-db-id
-      # - CPS_BASE_URL=https://cps.example.com
+      - CPS_DEFAULT_DB_ID=default-db-id # or "auto"
     ports:
       - "3000:3000"
 ```
@@ -48,8 +48,8 @@ You should receive a JSON object with `configured: true`, a `connectionString`, 
 
 1. Open your service in the Render dashboard.
 2. Go to `Environment` (or `Settings -> Environment`), add two environment variables:
-   - `CPS_ADMIN_API_KEY` = your admin key
-   - `CPS_DEFAULT_DB_ID` = default-db-id
+  - `CPS_ADMIN_API_KEY` = your admin key
+  - `CPS_DEFAULT_DB_ID` = default-db-id (or `auto` to let the app pick the first CPS DB)
 3. Redeploy the service (Render will typically redeploy automatically when you update environment variables).
 
 Verify with `curl` against your deployed URL:
@@ -91,10 +91,10 @@ curl https://your-heroku-app.herokuapp.com/api/cps/connection
 
 - If you still see the demo fallback message (`configured: false` or message containing "CPS not configured"), then:
   - Confirm the process received the env vars (check `docker exec` / process env or the platform UI).
-  - Confirm you restarted/redeployed the service after setting env vars.
-  - Check server logs for any errors contacting the CPS admin API.
+  - Confirm you restarted/redeployed the service after setting env vars and shipping `cps_metadata.db` with the deploy artifact.
+  - Ensure `cps_metadata.db` actually contains at least one database with encrypted admin credentials (use the CPS admin UI locally to add one, then redeploy the updated file).
 
-- If `/api/cps/connection` returns an HTTP 500, check server logs — the frontend now handles errors quietly and will display a friendly message instead of printing server error bodies to the browser console.
+- If `/api/cps/connection` returns an HTTP 500/502, check server logs for `CPS connection provisioning error` — the log will include the adapter's detailed message (e.g., unsupported DB type, unable to decrypt admin URI, missing metadata file).
 
 ---
 

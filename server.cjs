@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const cron = require('node-cron');
 const cookieParser = require('cookie-parser');
+const cpsAdapter = require('./server/cpsAdapter.cjs');
 // Authentication helpers (OTP, token utilities)
 let generateOTP, hashOTP, generateTempToken, verifyTempToken, verifyOTP;
 try {
@@ -542,16 +543,41 @@ app.use('/api/portfolios', authenticate, portfolioRoutes);
 app.use('/api/workspaces', authenticate, workspaceRoutes);
 app.use('/api/schemas', authenticate, schemaRoutes);
 
-// CPS helper endpoint: provision a per-user one-time connection via CPS admin API
+const CPS_AUTO_DB_TOKENS = new Set(['', 'auto', 'autodetect', 'default']);
+let cachedAutoDbId = null;
+
+function looksLikeAutoToken(value) {
+  if (value === undefined || value === null) return true;
+  return CPS_AUTO_DB_TOKENS.has(String(value).trim().toLowerCase());
+}
+
+async function autoDetectCpsDbId() {
+  if (cachedAutoDbId) return cachedAutoDbId;
+  const list = cpsAdapter.listDatabases();
+  if (Array.isArray(list) && list.length && list[0].id) {
+    cachedAutoDbId = list[0].id;
+    console.log('[CPS] Auto-selected default DB id', cachedAutoDbId, list[0].name ? `(${list[0].name})` : '');
+    return cachedAutoDbId;
+  }
+  return null;
+}
+
+async function resolveCpsDbId(req) {
+  const requestOverride = req.query?.dbId || (req.body && req.body.dbId);
+  if (!looksLikeAutoToken(requestOverride)) return String(requestOverride).trim();
+  const envValue = process.env.CPS_DEFAULT_DB_ID;
+  if (!looksLikeAutoToken(envValue)) return envValue.trim();
+  return autoDetectCpsDbId();
+}
+
+// CPS helper endpoint: provision a per-user one-time connection via embedded CPS adapter
 // Requires these env vars to be set in production/deploy:
-// CPS_ADMIN_API_KEY - admin API key for CPS
-// CPS_DEFAULT_DB_ID - the dbId in CPS to provision users for
-// CPS_BASE_URL - optional base URL for CPS (defaults to same host)
+// CPS_ADMIN_API_KEY - indicates CPS integration configured (also used by legacy admin flows)
+// CPS_DEFAULT_DB_ID - the dbId in CPS metadata to provision users for (or "auto")
 app.get('/api/cps/connection', authenticate, async (req, res) => {
   try {
-    const cpsAdminKey = process.env.CPS_ADMIN_API_KEY;
-    const cpsDbId = process.env.CPS_DEFAULT_DB_ID;
-    const cpsBase = process.env.CPS_BASE_URL || '';
+    const cpsAdminKey = process.env.CPS_ADMIN_API_KEY || process.env.ADMIN_API_KEY;
+    const cpsDbId = await resolveCpsDbId(req);
     if (!cpsAdminKey || !cpsDbId) {
       // Return a friendly non-500 response so frontend doesn't flood console with errors.
       console.warn('CPS proxy endpoint called but CPS_ADMIN_API_KEY or CPS_DEFAULT_DB_ID is not configured. Returning demo placeholders.');
@@ -570,26 +596,16 @@ app.get('/api/cps/connection', authenticate, async (req, res) => {
     // username prefix includes user id so provisioned username is unique per-user
     const usernamePrefix = `user_${req.userId || (req.user && req.user.userId) || 'anon'}`;
 
-    const url = (cpsBase || '') + `/api/databases/${encodeURIComponent(cpsDbId)}/provision-user`;
-    const body = { usernamePrefix, ttl: 3600 };
-
-    const resp = await axios({
-      method: 'post',
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': cpsAdminKey
-      },
-      data: body,
-      timeout: 10000
-    });
-
-    // Forward CPS response back to the frontend (one-time connection info)
-    return res.status(200).json(resp.data);
+    try {
+      const payload = await cpsAdapter.provisionConnection({ dbId: cpsDbId, usernamePrefix, ttl: 3600 });
+      return res.status(200).json(payload);
+    } catch (innerErr) {
+      console.error('CPS connection provisioning error:', innerErr && innerErr.message ? innerErr.message : innerErr);
+      return res.status(502).json({ error: 'CPS provisioning failed', details: { message: innerErr && innerErr.message ? innerErr.message : 'Unknown error' } });
+    }
   } catch (err) {
-    console.error('CPS connection provisioning error:', err && err.response ? err.response.data || err.response.statusText : err.message || err);
-    const msg = err && err.response && err.response.data ? err.response.data : { message: (err && err.message) || 'Unknown error' };
-    return res.status(502).json({ error: 'CPS provisioning failed', details: msg });
+    console.error('CPS connection provisioning error:', err && err.message ? err.message : err);
+    return res.status(502).json({ error: 'CPS provisioning failed', details: { message: err && err.message ? err.message : 'Unknown error' } });
   }
 });
 
