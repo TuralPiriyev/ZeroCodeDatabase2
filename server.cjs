@@ -601,6 +601,18 @@ app.get('/api/cps/connection', authenticate, async (req, res) => {
       return res.status(200).json(payload);
     } catch (innerErr) {
       console.error('CPS connection provisioning error:', innerErr && innerErr.message ? innerErr.message : innerErr);
+      // If CPS is misconfigured (e.g., missing db), return a friendly payload so frontend doesn't hard-fail
+      if (innerErr && innerErr.message === 'database_not_found') {
+        return res.status(200).json({
+          configured: false,
+          message: 'CPS is not configured with any databases. Provide CPS_DATABASES_JSON or CPS_DB_HOST/CPS_DB_ADMIN_URI and set CPS_DEFAULT_DB_ID.',
+          connectionString: '',
+          examples: {
+            php_pdo_mysql: "<?php\\n$dsn = 'mysql:host=DB_HOST;port=3306;dbname=DB_NAME;charset=utf8mb4';\\n$user = 'DB_USER';\\n$pass = 'DB_PASS';\\n?>",
+            node_mysql: "const mysql = require('mysql2/promise');\\n(async ()=>{ const conn = await mysql.createConnection({host:'DB_HOST',user:'DB_USER',password:'DB_PASS',database:'DB_NAME',port:3306}); const [rows] = await conn.query('SELECT NOW()'); console.log(rows); await conn.end(); })();"
+          }
+        });
+      }
       return res.status(502).json({ error: 'CPS provisioning failed', details: { message: innerErr && innerErr.message ? innerErr.message : 'Unknown error' } });
     }
   } catch (err) {
