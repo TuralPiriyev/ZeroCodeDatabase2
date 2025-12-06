@@ -17,6 +17,12 @@ if (!generateSnippets) {
   throw new Error('Failed to load CPS snippets service');
 }
 
+// Optional: static connection mode (no createUser). Useful for free-tier Mongo where createUser is blocked.
+const STATIC_CONN = process.env.CPS_STATIC_CONNECTION_STRING || process.env.CPS_STATIC_CONN_STRING;
+const STATIC_DB_ID = process.env.CPS_STATIC_DB_ID || 'static-db';
+const STATIC_DB_NAME = process.env.CPS_STATIC_DB_NAME || 'static';
+const STATIC_DB_TYPE = process.env.CPS_STATIC_DB_TYPE || 'mongodb';
+
 function defaultPort(type) {
   if (type === 'mongodb') return 27017;
   if (type === 'postgres') return 5432;
@@ -71,6 +77,11 @@ let cached = null;
 
 function loadDatabases() {
   if (cached) return cached;
+  // If static connection is set, expose a single pseudo-database entry and skip storage
+  if (STATIC_CONN) {
+    cached = [{ id: STATIC_DB_ID, name: STATIC_DB_NAME, type: STATIC_DB_TYPE, host: '', port: null, adminUri: STATIC_CONN }];
+    return cached;
+  }
   const envList = loadFromEnvJson();
   const fileList = envList.length ? envList : loadConfigFile();
   const normalized = fileList.map(normalizeEntry).filter(Boolean);
@@ -104,6 +115,20 @@ function findDatabase(dbId) {
 async function provisionConnection({ dbId, usernamePrefix, ttl }) {
   const db = findDatabase(dbId);
   if (!db) throw new Error('database_not_found');
+
+  // Static mode: return provided connection string without provisioning
+  if (STATIC_CONN && db.id === STATIC_DB_ID) {
+    const { snippets, one_time_token } = generateSnippets(STATIC_CONN, 'static');
+    return {
+      configured: true,
+      connectionString: STATIC_CONN,
+      expiresAt: null,
+      instructions: 'Static connection (no provisioning). Rotate manually if needed.',
+      snippets,
+      username: null,
+      one_time_token
+    };
+  }
   const enriched = {
     id: db.id,
     name: db.name,
