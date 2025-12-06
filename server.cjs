@@ -600,7 +600,8 @@ app.get('/api/cps/connection', authenticate, async (req, res) => {
       const payload = await cpsAdapter.provisionConnection({ dbId: cpsDbId, usernamePrefix, ttl: 3600 });
       return res.status(200).json(payload);
     } catch (innerErr) {
-      console.error('CPS connection provisioning error:', innerErr && innerErr.message ? innerErr.message : innerErr);
+      const msg = innerErr && innerErr.message ? innerErr.message : 'Unknown error';
+      console.error('CPS connection provisioning error:', msg);
       // If CPS is misconfigured (e.g., missing db), return a friendly payload so frontend doesn't hard-fail
       if (innerErr && innerErr.message === 'database_not_found') {
         return res.status(200).json({
@@ -613,7 +614,15 @@ app.get('/api/cps/connection', authenticate, async (req, res) => {
           }
         });
       }
-      return res.status(502).json({ error: 'CPS provisioning failed', details: { message: innerErr && innerErr.message ? innerErr.message : 'Unknown error' } });
+      // Bubble a safe diagnostic so the frontend can show why 502 happened (no secrets leaked)
+      return res.status(502).json({
+        error: 'CPS provisioning failed',
+        details: {
+          message: msg,
+          code: innerErr && innerErr.code ? innerErr.code : undefined,
+          name: innerErr && innerErr.name ? innerErr.name : undefined
+        }
+      });
     }
   } catch (err) {
     console.error('CPS connection provisioning error:', err && err.message ? err.message : err);
