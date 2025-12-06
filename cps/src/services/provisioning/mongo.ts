@@ -23,8 +23,23 @@ export async function provisionMongoUser(dbEntry: DatabaseEntry, usernamePrefix:
   }
 
   const expiresAt = ttlSeconds ? new Date(Date.now() + ttlSeconds * 1000).toISOString() : null;
-  // Build connection string (basic form)
-  const connectionString = `mongodb://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${dbEntry.host}:${dbEntry.port || 27017}/${encodeURIComponent(dbEntry.name)}`;
+
+  // Build connection string using adminUri as template so we keep SRV and TLS/query options.
+  let connectionString = '';
+  try {
+    const u = new URL(adminUri);
+    u.username = encodeURIComponent(username);
+    u.password = encodeURIComponent(password);
+    // If admin URI points to admin db, override with target db
+    if (u.pathname === '/' || u.pathname === '/admin') {
+      u.pathname = `/${encodeURIComponent(dbEntry.name)}`;
+    }
+    connectionString = u.toString();
+  } catch (e) {
+    // Fallback to basic form if parsing fails
+    connectionString = `mongodb://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${dbEntry.host}:${dbEntry.port || 27017}/${encodeURIComponent(dbEntry.name)}`;
+  }
+
   return { username, password, expiresAt, connectionString };
 }
 
