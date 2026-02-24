@@ -18,7 +18,7 @@ interface AuthContextType {
   isLoading: boolean;
   authError: string | null;
   login: (email: string, password: string) => Promise<boolean>;
-  register: (userData: { username: string; email: string; password: string; fullName: string; phone: string }) => Promise<{ success: boolean; tempToken?: string }>;
+  register: (userData: { username: string; email: string; password: string; fullName: string; phone: string }) => Promise<{ success: boolean; tempToken?: string; token?: string; requiresVerification?: boolean; error?: { code?: string; message?: string } }>;
   logout: () => void;
   verifyCode: (email: string, code: string) => Promise<void>;
   requestResend: (email: string) => Promise<void>;
@@ -120,15 +120,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const register = async (userData: { username: string; email: string; password: string; fullName: string; phone: string }): Promise<{ success: boolean; tempToken?: string; error?: { code?: string; message?: string } }> => {
+  const register = async (userData: { username: string; email: string; password: string; fullName: string; phone: string }): Promise<{ success: boolean; tempToken?: string; token?: string; requiresVerification?: boolean; error?: { code?: string; message?: string } }> => {
     try {
       setIsLoading(true);
       setAuthError(null);
       const response = await api.post('/auth/register', { ...userData });
 
+      if (response?.data?.token && response?.data?.user) {
+        localStorage.setItem('token', response.data.token);
+        const u = response.data.user;
+        setUser({
+          ...u,
+          color: generateUserColor(u.username),
+          isOnline: true,
+          lastSeen: new Date()
+        });
+        return {
+          success: true,
+          token: response.data.token,
+          requiresVerification: !!response.data.requiresVerification
+        };
+      }
+
       if (response && response.data && response.data.tempToken) {
         localStorage.setItem('pendingVerificationEmail', userData.email);
-        return { success: true, tempToken: response.data.tempToken };
+        return {
+          success: true,
+          tempToken: response.data.tempToken,
+          requiresVerification: true
+        };
       }
       return { success: false };
     } catch (err) {

@@ -67,6 +67,11 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onLoginClick }) => {
       if (response.success && response.tempToken) {
         setTempToken(response.tempToken);
         setShowOTPModal(true);
+        return;
+      }
+
+      if (response.success && response.token) {
+        navigate('/main');
       }
     } catch (error) {
       console.error('Registration error:', error);

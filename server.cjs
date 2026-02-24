@@ -71,6 +71,7 @@ const PAYPAL_SECRET = process.env.PAYPAL_SECRET;
 const PAYPAL_PLAN_PRO_ID = process.env.PAYPAL_PLAN_PRO_ID;
 const PAYPAL_PLAN_ULTIMATE_ID = process.env.PAYPAL_PLAN_ULTIMATE_ID;
 const PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID;
+const DISABLE_EMAIL_VERIFICATION = String(process.env.DISABLE_EMAIL_VERIFICATION || 'true').toLowerCase() !== 'false';
 
 // Ensure OTP secret is present. In production, require it. In development, auto-generate a temporary one and log a warning.
 if (!process.env.OTP_SECRET) {
@@ -994,6 +995,44 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
     }
 
     const hashed = await bcrypt.hash(password, 10);
+
+    // Optional MVP mode: register user directly without OTP/email verification flow
+    if (DISABLE_EMAIL_VERIFICATION) {
+      const createdUser = await new User({
+        username,
+        email,
+        password: hashed,
+        fullName,
+        phone,
+        isVerified: true,
+        otpHash: null,
+        otpExpiresAt: null,
+        otpAttempts: 0,
+        otpResendCount: 0,
+        lastResendAt: null
+      }).save();
+
+      const payload = { userId: createdUser._id, email: createdUser.email, username: createdUser.username };
+      const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '1d' });
+
+      const userObj = createdUser.toObject();
+      delete userObj.password;
+      delete userObj.otpHash;
+
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'none',
+        maxAge: 24 * 60 * 60 * 1000
+      });
+
+      return res.status(201).json({
+        message: 'Registration successful',
+        token,
+        user: userObj,
+        requiresVerification: false
+      });
+    }
     
     // Generate secure OTP
     const otp = generateOTP();
