@@ -1,0 +1,27 @@
+# Node.js-in stabil versiyası
+FROM node:20-alpine
+
+# Server daxilində işçi qovluğu
+WORKDIR /usr/src/app
+
+# İlk öncə əsas package.json faylını köçürürük
+COPY package*.json ./
+
+# Sənin postinstall skriptində 'cps' qovluğuna keçid edildiyi üçün,
+# npm install-un xəta verməməsi üçün cps qovluğunun package.json-unu da öncədən bura köçürməliyik
+COPY cps/package*.json ./cps/
+
+# Bütün kitabxanaları yükləyirik (bu zaman postinstall skriptin də işə düşəcək)
+RUN npm install
+
+# İndi isə qalan bütün layihə fayllarını konteynerə köçürürük
+COPY . .
+
+# Əgər 'cps' üçün build edilməyibsə, prestart-ın işləməsi üçün zəmanət yaradırıq
+RUN npm run build:cps
+
+# İşıqlandırılacaq port (Back4app üçün standart)
+EXPOSE 8080
+
+# Sənin package.json-dakı start skriptini işə salırıq (node server.js)
+CMD [ "npm", "start" ]
