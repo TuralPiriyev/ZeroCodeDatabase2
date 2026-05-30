@@ -1755,16 +1755,14 @@ app.use('/api/*', (req, res) => {
 });
 
 // Serve static files in production - ONLY for non-API routes
-if (process.env.NODE_ENV === 'production') {
-  const distPath = path.join(__dirname, "dist");
-  app.use(express.static(distPath));
-  
-  // SPA fallback - ONLY for non-API routes
-  app.get(/^\/(?!api).*/, (req, res) => {
-    console.log(`📄 Serving SPA for: ${req.path}`);
-    res.sendFile(path.join(distPath, "index.html"));
-  });
-}
+// Frontend-in (React/Vite) statik fayllarını oxutmaq (şərtsiz)
+const distPath = path.join(__dirname, "dist");
+app.use(express.static(distPath));
+
+// SPA fallback - API-dan başqa BÜTÜN linkləri birbaşa React-ə (index.html) yönləndirmək
+app.get('*', (req, res) => {
+  res.sendFile(path.join(distPath, "index.html"));
+});
 
 // Global error handler
 app.use((err, req, res, next) => {
