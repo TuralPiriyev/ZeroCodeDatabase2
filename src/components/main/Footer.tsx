@@ -90,11 +90,7 @@ const Footer = () => {
                   Terms of Service
                 </a>
               </li>
-              <li>
-                <a href="https://zerocodedb.online/cookies" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-[#3AAFF0] transition-colors">
-                  Test Test Test
-                </a>
-              </li>
+           
               <li>
                 <a href="https://zerocodedb.online/gdpr" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-[#3AAFF0] transition-colors">
                   GDPR
