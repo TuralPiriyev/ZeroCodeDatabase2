@@ -14,22 +14,21 @@ const HowToSection = () => {
         </div>
 
         <div className="flex flex-col lg:flex-row gap-12 items-center">
-          <div className="lg:w-7/12">
+          {/* YouTube Video Embed Frame */}
+          <div className="lg:w-7/12 w-full">
             <div className="relative aspect-video bg-black rounded-3xl overflow-hidden shadow-xl">
-              {/* This would be replaced with an actual YouTube embed */}
-              <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
-                <div className="text-center">
-                  <div className="bg-white/10 backdrop-blur-sm p-8 rounded-3xl">
-                    <Play className="h-16 w-16 text-white mx-auto mb-4" />
-                    <p className="text-white text-lg font-medium">Tutorial Video</p>
-                    <p className="text-white/70 text-sm mt-2">Click to play the video tutorial</p>
-                  </div>
-                </div>
-              </div>
+              <iframe
+                className="absolute inset-0 w-full h-full"
+                src="https://www.youtube.com/embed/OfjJAfXfE9o"
+                title="ZeroCodeDB Tutorial Video"
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              ></iframe>
             </div>
           </div>
 
-          <div className="lg:w-5/12">
+          <div className="lg:w-5/12 w-full">
             <h3 className="text-2xl font-bold text-gray-800 mb-6">
               Getting Started is Easy
             </h3>
@@ -76,14 +75,19 @@ const HowToSection = () => {
               </div>
             </div>
 
-            <div className="mt-8 flex space-x-4">
+            <div className="mt-8 flex flex-wrap gap-4">
               <a href="#" className="flex items-center text-[#3AAFF0] hover:text-[#007ACC] font-medium">
                 <FileText className="h-5 w-5 mr-2" />
                 Read Documentation
               </a>
-              <a href="#" className="flex items-center text-[#3AAFF0] hover:text-[#007ACC] font-medium">
+              <a 
+                href="https://youtu.be/OfjJAfXfE9o" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="flex items-center text-[#3AAFF0] hover:text-[#007ACC] font-medium"
+              >
                 <Video className="h-5 w-5 mr-2" />
-                More Tutorials
+                Watch on YouTube
               </a>
             </div>
           </div>
