@@ -71,7 +71,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onLoginClick }) => {
       }
 
       if (response.success && response.token) {
-        navigate('/main');
+        navigate('/workspace');
       }
     } catch (error) {
       console.error('Registration error:', error);
@@ -91,7 +91,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onLoginClick }) => {
       
       if (response.data.token) {
         localStorage.setItem('token', response.data.token);
-        navigate('/main');
+        navigate('/workspace');
       }
     } catch (error: any) {
       const errorData = error.response?.data?.error;

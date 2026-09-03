@@ -35,7 +35,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onRegisterClick }) => {
     setIsSubmitting(true);
     try {
       await login(data.email, data.password);
-      navigate('/main');
+      navigate('/workspace');
     } catch (error) {
       console.error('Login error:', error);
     } finally {

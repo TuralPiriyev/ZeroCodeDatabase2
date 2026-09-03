@@ -23,7 +23,7 @@ export const AuthPage: React.FC = () => {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/main" replace />;
+    return <Navigate to="/workspace" replace />;
   }
 
   return (

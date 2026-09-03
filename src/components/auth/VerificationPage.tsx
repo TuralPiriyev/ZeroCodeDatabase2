@@ -65,7 +65,7 @@ export const VerificationPage: React.FC = () => {
     setIsShaking(false);
     try {
       await verifyCode(emailToVerify, code.join(''));
-      navigate('/main');
+      navigate('/workspace');
     } catch (err) {
       setHasError(true);
       triggerShake();

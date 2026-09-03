@@ -33,12 +33,14 @@ function App() {
 
                 {/* Qorunan routelar */}
                 <Route element={<ProtectedRoute />}>
-                  <Route path="/main" element={<MainPage />} />
                   <Route path="/workspace" element={<WorkspacePage />} />
                   <Route path="/workspace/:id" element={<WorkspacePage />} />
                   {/* Subscribe page should be available to logged-in users */}
                   <Route path="/subscribe" element={<SubscribePage />} />
                 </Route>
+
+                {/* Public landing page */}
+                <Route path="/main" element={<MainPage />} />
 
                 {/* Public legal pages */}
                 <Route path="/terms" element={<TermsPage />} />

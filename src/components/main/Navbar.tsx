@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Database, Menu, X, Settings } from 'lucide-react';
 import SettingsModal from './SettingsModal';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { ArrowRight } from 'lucide-react';
 const Navbar = () => {
+  const navigate = useNavigate();
+  const { isAuthenticated, isLoading } = useAuth();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -74,13 +77,15 @@ const Navbar = () => {
               <Settings size={18} />
               Settings
             </button>
-            <Link
-                           to="/workspace"
+            <button
+                           type="button"
+                           onClick={() => navigate(isAuthenticated ? '/workspace' : '/login')}
+                           disabled={isLoading}
                            className="bg-[#3AAFF0] hover:bg-[#007ACC] text-white px-8 py-3 rounded-full font-medium text-lg flex items-center justify-center transition-all transform hover:scale-105 shadow-lg"
                          >
                            Get Started Now
                            <ArrowRight className="ml-2 h-5 w-5" />
-                         </Link>
+                         </button>
           </nav>
 
           {/* Mobile Menu Button */}
@@ -142,13 +147,17 @@ const Navbar = () => {
               <Settings size={18} />
               Settings
             </button>
-            <a
-              href="#"
+            <button
+              type="button"
+              onClick={() => {
+                navigate(isAuthenticated ? '/workspace' : '/login');
+                setIsMenuOpen(false);
+              }}
+              disabled={isLoading}
               className="bg-[#3AAFF0] hover:bg-[#007ACC] text-white px-5 py-2 rounded-full transition-colors font-medium mx-4"
-              onClick={() => setIsMenuOpen(false)}
             >
               Get Started
-            </a>
+            </button>
           </div>
         </div>
       )}

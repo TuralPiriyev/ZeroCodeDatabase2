@@ -1,6 +1,14 @@
 import { Database, ArrowRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 const HeroSection = () => {
+  const navigate = useNavigate();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  const handleGetStarted = () => {
+    navigate(isAuthenticated ? '/workspace' : '/login');
+  };
+
   return (
     <section id="home" className="pt-28 pb-16 md:pt-32 md:pb-24 bg-gradient-to-b from-[#E6F7FF] to-white">
       <div className="container mx-auto px-4 md:px-6">
@@ -14,13 +22,15 @@ const HeroSection = () => {
               Build, visualize, and manage your database tables without writing a single line of SQL. Perfect for developers, startups, and teams.
             </p>
             <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
-             <Link
-                to="/workspace"
+             <button
+                type="button"
+                onClick={handleGetStarted}
+                disabled={isLoading}
                 className="bg-[#3AAFF0] hover:bg-[#007ACC] text-white px-8 py-3 rounded-full font-medium text-lg flex items-center justify-center transition-all transform hover:scale-105 shadow-lg"
               >
                 Get Started Now
                 <ArrowRight className="ml-2 h-5 w-5" />
-              </Link>
+              </button>
               <a
                 href="#how-to-use"
                 className="border-2 border-[#3AAFF0] text-[#3AAFF0] hover:bg-[#E6F7FF] px-8 py-3 rounded-full font-medium text-lg flex items-center justify-center transition-all"
